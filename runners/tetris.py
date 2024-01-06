@@ -2,12 +2,12 @@ import gymnasium as gym
 import numpy as np
 import keras
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, Conv2D, MaxPooling2D
 from keras.optimizers import Adam
 import random
 
 # Environment setup
-env = gym.make("ALE/Tetris-v5", obs_type="ram")
+env = gym.make("ALE/Tetris-v5", obs_type="grayscale")
 state_size = env.observation_space.shape[0]
 action_size = env.action_space.n
 print(state_size, action_size)
@@ -31,6 +31,8 @@ model.add(Dense(24, input_dim=state_size, activation='relu'))
 model.add(Dense(24, activation='relu'))
 model.add(Dense(action_size, activation='linear'))
 model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
+model.summary()
+
 
 #model.load_weights('tetris_gymnasium_weights.h5')
 
@@ -59,28 +61,26 @@ def train_network():
     target_values = model.predict_on_batch(states)
     target_values[np.arange(batch_size), actions] = targets
 
-    model.fit(states, target_values, epochs=1, verbose=1)
+    model.fit(states, target_values, epochs=1)
 
 # Training the agent
 for episode in range(100):
     state = env.reset()
     # flatten
     #print(state)
-    state = np.reshape(state[0], [1, state_size])
     #print(state)
     total_reward = 0
 
     while True:
         # env.render()
 
-        state = np.reshape(state[0], [1, state_size])
         action = choose_action(state)
         observation, reward, terminated, truncated, info = env.step(action)
-        observation = [observation]#np.reshape(observation[0], [1, state_size])
 
-        memory.append((state, action, reward, observation, terminated))
-        if len(memory) > memory_size:
-            memory.pop(0)
+        if reward > 0:
+            memory.append((state, action, reward, observation, terminated))
+            if len(memory) > memory_size:
+                memory.pop(0)
 
         total_reward += reward
         state = observation
