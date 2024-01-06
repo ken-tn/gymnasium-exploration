@@ -1,5 +1,6 @@
 import gymnasium as gym
 import numpy as np
+import gym_totris
 import keras
 from keras.models import Sequential
 from keras.layers import Dense, Conv2D, MaxPooling2D
@@ -7,8 +8,8 @@ from keras.optimizers import Adam
 import random
 
 # Environment setup
-env = gym.make("ALE/Tetris-v5", obs_type="grayscale")
-state_size = env.observation_space.shape[0]
+env = gym.make("TOTRIS-v0")
+state_size = env.observation_space['board'].shape
 action_size = env.action_space.n
 print(state_size, action_size)
 
