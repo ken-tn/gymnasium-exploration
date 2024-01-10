@@ -36,10 +36,17 @@ def move(key):
 
     return UE_Call(args)
 
+_action_to_move = {
+            0: "up",
+            1: "down",
+            2: "left",
+            3: "right"
+        }
+
 if __name__ == "__main__":
     terminated = False
     while True:
-        move(random.choice(action_space))
+        move(random.choice(_action_to_move))
         response = tick()
         response = response.json()['ReturnValue']
         # observation = response['Observation']
