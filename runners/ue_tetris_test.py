@@ -1,16 +1,24 @@
+"""
+README!!!
+
+This is currently broken, AIMove needs updating
+"""
+
 import json
 import requests
 import time
 import random
 
 API = "http://127.0.0.1:30010/"
+gameModeObjectPath="/Game/Levels/UEDPIE_0_Start.Start:PersistentLevel.TOTRISGameModeBP_C_0"
+pawnObjectPath="/Game/Levels/UEDPIE_0_Start.Start:PersistentLevel.ControllerPawnBP_C_1"
 def UE_Call(args):
     headers = {"Content-Type": "application/json"}
     return requests.put(API+"remote/object/call", data=json.dumps(args), headers=headers)
 
 def tick():
     args = {
-        "objectPath" : "/Game/Levels/UEDPIE_0_Start.Start:PersistentLevel.TOTRISGameModeBase_0",
+        "objectPath" : gameModeObjectPath,
         "functionName" : "GameTick",
         "generateTransaction" : True
     }
@@ -19,7 +27,7 @@ def tick():
 
 def reset():
     args = {
-        "objectPath" : "/Game/Levels/UEDPIE_0_Start.Start:PersistentLevel.TOTRISGameModeBase_0",
+        "objectPath" : gameModeObjectPath,
         "functionName" : "Reset",
         "generateTransaction" : False
     }
@@ -28,9 +36,8 @@ def reset():
 
 def move(key):
     args = {
-        "objectPath" : "/Game/Levels/UEDPIE_0_Start.Start:PersistentLevel.ControllerPawn_0",
+        "objectPath" : pawnObjectPath,
         "functionName" : "AIMove",
-        "parameters": {"KeyName": key},
         "generateTransaction" : False
     }
 

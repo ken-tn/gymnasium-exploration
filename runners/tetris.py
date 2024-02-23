@@ -58,8 +58,8 @@ def train_network():
     next_states = np.vstack([item[3] for item in mini_batch])
     dones = np.array([item[4] for item in mini_batch])
 
-    targets = rewards + gamma * (np.amax(model.predict_on_batch(next_states), axis=1)) * (1 - dones)
-    target_values = model.predict_on_batch(states)
+    targets = rewards + gamma * (np.amax(model.predict_on_batch(next_states), axis=1)) * (1 - dones) # Q(s, a)
+    target_values = model.predict_on_batch(states) # 
     target_values[np.arange(batch_size), actions] = targets
 
     model.fit(states, target_values, epochs=1)
