@@ -9,14 +9,14 @@ import random
 
 # Environment setup
 env = gym.make("TOTRIS-v0")
-state_size = env.observation_space['board'].shape
+state_size = env.observation_space['board'].shape[0]
 action_size = env.action_space.n
 print(state_size, action_size)
 
 # Hyperparameters
-learning_rate = 0.001
+learning_rate = 0.01
 gamma = 0.99  # Discount factor
-epsilon = 1.0  # Exploration-exploitation trade-off
+epsilon = .25  # Exploration-exploitation trade-off
 epsilon_decay = 0.995
 min_epsilon = 0.01
 batch_size = 64
@@ -27,22 +27,20 @@ memory = []
 
 # Build the Q-network
 model = Sequential()
-model.add(keras.Input(shape=(state_size,)))
-model.add(Dense(24, input_dim=state_size, activation='relu'))
+model.add(Dense(7, input_dim=state_size, activation='relu'))
+model.add(Dense(24, activation='relu'))
 model.add(Dense(24, activation='relu'))
 model.add(Dense(action_size, activation='linear'))
 model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
 model.summary()
 
 
-#model.load_weights('tetris_gymnasium_weights.h5')
+model.load_weights('tetris_gymnasium_weights.h5')
 
 # Function to choose an action based on epsilon-greedy strategy
 def choose_action(state):
     if np.random.rand() <= epsilon:
         return np.random.choice(action_size)
-    #print("predicting")
-    #print(state)
     q_values = model.predict(state)
     return np.argmax(q_values[0])
 
@@ -64,24 +62,40 @@ def train_network():
 
     model.fit(states, target_values, epochs=1)
 
-# Training the agent
-for episode in range(100):
-    state = env.reset()
-    # flatten
-    #print(state)
-    #print(state)
-    total_reward = 0
+def pretraining_action():
+    action = input()
 
+    if action == "":
+        return 1
+    
+    try:
+        action = int(action)
+        # enter = down, 1 = rotate, 2 = left, 3 = right
+        actions = [1, 0, 2, 3]
+        
+        return actions[int(action)]
+    except:
+        return 1
+
+# Training the agent
+for episode in range(10000):
+    state = env.reset()
+    state = state[0]['board']
+    state = np.reshape(state, [1, state_size])
+
+    total_reward = 0
     while True:
         # env.render()
 
+        #action = pretraining_action()
         action = choose_action(state)
         observation, reward, terminated, truncated, info = env.step(action)
+        observation = observation['board']
+        observation = np.reshape(observation, [1, state_size])
 
-        if reward > 0:
-            memory.append((state, action, reward, observation, terminated))
-            if len(memory) > memory_size:
-                memory.pop(0)
+        memory.append((state, action, reward, observation, terminated))
+        if len(memory) > memory_size:
+            memory.pop(0)
 
         total_reward += reward
         state = observation
@@ -89,11 +103,10 @@ for episode in range(100):
         if terminated or truncated:
             train_network()
             print("Episode {}: Total Reward: {}, Epsilon: {:.2f}".format(episode, total_reward, epsilon))
+            model.save_weights('tetris_gymnasium_weights.h5')
             break
 
     epsilon = max(min_epsilon, epsilon * epsilon_decay)
-
-model.save_weights('tetris_gymnasium_weights.h5')
 
 # Close the environment
 env.close()
