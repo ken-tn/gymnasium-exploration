@@ -6,6 +6,7 @@ from keras.models import Sequential
 from keras.layers import Dense, Conv2D, MaxPooling2D
 from keras.optimizers import Adam
 import random
+import pickle
 
 # Environment setup
 env = gym.make("TOTRIS-v0")
@@ -18,11 +19,17 @@ gamma = 0.99  # Discount factor
 epsilon = .5  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
 min_epsilon = 0.01
-batch_size = 1024
+batch_size = 64
 memory_size = 10000
 
 # Experience Replay Memory
 memory = []
+try:
+    pkl_file = open('memory_pretrained.pkl', 'rb')
+    memory = pickle.load(pkl_file)
+    pkl_file.close()
+except:
+    print("Warning: no memory loaded")
 
 # Build the Q-network
 model = Sequential()
@@ -34,8 +41,10 @@ model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
 
 model.summary(show_trainable=True)
 
-
-model.load_weights('tetris_gymnasium_weights.h5')
+try:
+    model.load_weights('tetris_gymnasium_weights.h5')
+except:
+    print("Warning: no weights loaded")
 
 # Function to choose an action based on epsilon-greedy strategy
 def choose_action(state):
@@ -89,13 +98,13 @@ while True:
     while True:
         # env.render()
 
-        #action = pretraining_action()
-        action = choose_action(state)
+        action = pretraining_action()
+        #action = choose_action(state)
         observation, reward, terminated, truncated, info = env.step(action)
         observation = observation['board']
         observation = np.reshape(observation, [1, state_size])
 
-        memory.append((state, action, reward, observation, terminated))
+        memory.append([state, action, reward, observation, terminated])
         if len(memory) > memory_size:
             memory.pop(0)
 
@@ -105,7 +114,13 @@ while True:
         if terminated or truncated:
             train_network()
             print("Episode {}: Total Reward: {}, Epsilon: {:.2f}".format(episode, total_reward, epsilon))
-            model.save_weights('tetris_gymnasium_weights.h5')
+
+            if episode % 1 == 0:
+                model.save_weights('tetris_gymnasium_weights_pretrained.h5')
+
+                output = open('memory_pretrained.pkl', 'wb')
+                pickle.dump(memory, output)
+                output.close()
             break
 
     epsilon = max(min_epsilon, epsilon * epsilon_decay)
