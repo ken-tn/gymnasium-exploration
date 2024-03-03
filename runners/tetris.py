@@ -11,15 +11,14 @@ import random
 env = gym.make("TOTRIS-v0")
 state_size = env.observation_space['board'].shape[0]
 action_size = env.action_space.n
-print(state_size, action_size)
 
 # Hyperparameters
-learning_rate = 0.01
+learning_rate = 0.001
 gamma = 0.99  # Discount factor
-epsilon = .25  # Exploration-exploitation trade-off
-epsilon_decay = 0.995
+epsilon = .5  # Exploration-exploitation trade-off
+epsilon_decay = 0.998
 min_epsilon = 0.01
-batch_size = 64
+batch_size = 1024
 memory_size = 10000
 
 # Experience Replay Memory
@@ -27,12 +26,13 @@ memory = []
 
 # Build the Q-network
 model = Sequential()
-model.add(Dense(7, input_dim=state_size, activation='relu'))
-model.add(Dense(24, activation='relu'))
-model.add(Dense(24, activation='relu'))
-model.add(Dense(action_size, activation='linear'))
+model.add(Dense(64, input_dim=state_size, activation='relu'))
+model.add(Dense(64, activation='relu'))
+model.add(Dense(64, activation='relu'))
+model.add(Dense(action_size, activation='softmax'))
 model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
-model.summary()
+
+model.summary(show_trainable=True)
 
 
 model.load_weights('tetris_gymnasium_weights.h5')
@@ -60,7 +60,7 @@ def train_network():
     target_values = model.predict_on_batch(states) # 
     target_values[np.arange(batch_size), actions] = targets
 
-    model.fit(states, target_values, epochs=1)
+    model.fit(states, target_values, epochs=1, verbose=0)
 
 def pretraining_action():
     action = input()
@@ -78,7 +78,9 @@ def pretraining_action():
         return 1
 
 # Training the agent
-for episode in range(10000):
+episode = 0
+while True:
+    episode += 1
     state = env.reset()
     state = state[0]['board']
     state = np.reshape(state, [1, state_size])
