@@ -7,6 +7,8 @@ from keras.layers import Dense
 from keras.optimizers import Adam
 import random
 import pickle
+import pandas as pd
+import tensorflow as tf
 
 # Environment setup
 env = gym.make("TOTRIS-v0")
@@ -16,19 +18,22 @@ action_size = env.action_space.n
 # Hyperparameters
 learning_rate = 0.001
 gamma = 0.99  # Discount factor
-epsilon = 0.01  # Exploration-exploitation trade-off
+epsilon = 0.99  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
 min_epsilon = 0.01
 batch_size = 512
 memory_size = 30000
 
-loadMemoryFile = "memory_using_pretrained.pkl"
-loadWeightFile = "tetris_gymnasium_weights_using_pretrained.h5"
+loadMemoryFile = ""
+loadWeightFile = ""
 
-saveMemoryFile = "memory_using_pretrained.pkl"
-saveWeightFile = "tetris_gymnasium_weights_using_pretrained.h5"
+saveMemoryFile = "memory_pieces.pkl"
+saveWeightFile = "weights_pieces.h5"
 
-episodePerSave = 10
+results = []
+saveResultsFile = "results.pkl"
+
+episodePerSave = 2
 
 # Experience Replay Memory
 memory = []
@@ -44,7 +49,7 @@ model = Sequential()
 model.add(Dense(64, input_dim=state_size, activation='relu'))
 model.add(Dense(64, activation='relu'))
 model.add(Dense(64, activation='relu'))
-model.add(Dense(action_size, activation='linear'))
+model.add(Dense(action_size, activation='relu'))
 model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
 
 model.summary(show_trainable=True)
@@ -121,14 +126,17 @@ while True:
 
         if terminated or truncated:
             train_network()
-            print("Episode {}: Total Reward: {}, Epsilon: {:.2f}".format(episode, total_reward, epsilon))
+            print("Episode {}: Total Reward: {}, Epsilon: {:.2f}, Drawn Pieces: {}, Lines Cleared: {}".format(episode, total_reward, epsilon, info['state'][1], info['state'][2]))
+            results.append((pd.Timestamp.now(), episode, total_reward, epsilon, info['state'][1], info['state'][2], info['state'][3]))
 
             if episode % episodePerSave == 0:
                 model.save_weights(saveWeightFile)
 
-                output = open(saveMemoryFile, 'wb')
-                pickle.dump(memory, output)
-                output.close()
+                with open(saveMemoryFile, 'wb') as output:
+                    pickle.dump(memory, output)
+
+                with open(saveResultsFile, 'wb') as output:
+                    pickle.dump(results, output)
             break
 
     epsilon = max(min_epsilon, epsilon * epsilon_decay)
