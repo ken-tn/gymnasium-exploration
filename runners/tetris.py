@@ -9,6 +9,7 @@ import random
 import pickle
 import pandas as pd
 import tensorflow as tf
+from collections import deque
 
 # Environment setup
 env = gym.make("TOTRIS-v0")
@@ -24,23 +25,27 @@ min_epsilon = 0.01
 batch_size = 512
 memory_size = 30000
 
+episodePerSave = 2
+
 loadMemoryFile = ""
 loadWeightFile = ""
 
 saveMemoryFile = "memory_pieces.pkl"
 saveWeightFile = "weights_pieces.h5"
 
-results = []
+results = deque()
 saveResultsFile = "results.pkl"
-
-episodePerSave = 2
+try:
+    with open(saveResultsFile, 'rb') as file:
+        results = pickle.load(file)
+except:
+    print("Warning: no memory loaded")
 
 # Experience Replay Memory
-memory = []
+memory = deque(maxlen=memory_size)
 try:
-    pkl_file = open(loadMemoryFile, 'rb')
-    memory = pickle.load(pkl_file)
-    pkl_file.close()
+    with open(loadMemoryFile, 'rb') as file:
+        memory = pickle.load(file)
 except:
     print("Warning: no memory loaded")
 
