@@ -3,7 +3,7 @@ import numpy as np
 import gym_totris
 import keras
 from keras.models import Sequential
-from keras.layers import Dense, Conv2D, MaxPooling2D
+from keras.layers import Dense
 from keras.optimizers import Adam
 import random
 import pickle
@@ -16,16 +16,24 @@ action_size = env.action_space.n
 # Hyperparameters
 learning_rate = 0.001
 gamma = 0.99  # Discount factor
-epsilon = .5  # Exploration-exploitation trade-off
+epsilon = 0.01  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
 min_epsilon = 0.01
-batch_size = 64
-memory_size = 10000
+batch_size = 512
+memory_size = 30000
+
+loadMemoryFile = "memory_using_pretrained.pkl"
+loadWeightFile = "tetris_gymnasium_weights_using_pretrained.h5"
+
+saveMemoryFile = "memory_using_pretrained.pkl"
+saveWeightFile = "tetris_gymnasium_weights_using_pretrained.h5"
+
+episodePerSave = 10
 
 # Experience Replay Memory
 memory = []
 try:
-    pkl_file = open('memory_pretrained.pkl', 'rb')
+    pkl_file = open(loadMemoryFile, 'rb')
     memory = pickle.load(pkl_file)
     pkl_file.close()
 except:
@@ -36,13 +44,13 @@ model = Sequential()
 model.add(Dense(64, input_dim=state_size, activation='relu'))
 model.add(Dense(64, activation='relu'))
 model.add(Dense(64, activation='relu'))
-model.add(Dense(action_size, activation='softmax'))
+model.add(Dense(action_size, activation='linear'))
 model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
 
 model.summary(show_trainable=True)
 
 try:
-    model.load_weights('tetris_gymnasium_weights.h5')
+    model.load_weights(loadWeightFile)
 except:
     print("Warning: no weights loaded")
 
@@ -98,8 +106,8 @@ while True:
     while True:
         # env.render()
 
-        action = pretraining_action()
-        #action = choose_action(state)
+        #action = pretraining_action()
+        action = choose_action(state)
         observation, reward, terminated, truncated, info = env.step(action)
         observation = observation['board']
         observation = np.reshape(observation, [1, state_size])
@@ -115,10 +123,10 @@ while True:
             train_network()
             print("Episode {}: Total Reward: {}, Epsilon: {:.2f}".format(episode, total_reward, epsilon))
 
-            if episode % 1 == 0:
-                model.save_weights('tetris_gymnasium_weights_pretrained.h5')
+            if episode % episodePerSave == 0:
+                model.save_weights(saveWeightFile)
 
-                output = open('memory_pretrained.pkl', 'wb')
+                output = open(saveMemoryFile, 'wb')
                 pickle.dump(memory, output)
                 output.close()
             break
