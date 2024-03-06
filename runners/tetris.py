@@ -3,7 +3,7 @@ import numpy as np
 import gym_totris
 import keras
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D
 from keras.optimizers import Adam
 import random
 import pickle
@@ -27,14 +27,14 @@ memory_size = 30000
 
 episodePerSave = 10
 
-loadMemoryFile = "../memory_pieces_pretrained.pkl"
-loadWeightFile = "../weights_pieces_pretrained_step2000_epochs10.h5"
+loadMemoryFile = ""
+loadWeightFile = ""
 
-saveMemoryFile = "../memory_pieces_using_pretrained_step2000_epochs10.pkl"
-saveWeightFile = "../weights_pieces_using_pretrained_step2000_epochs10.h5"
+saveMemoryFile = "../memory_conv_test.pkl"
+saveWeightFile = "../weight_conv_test.h5"
 
-loadResultsFile = "../results_pieces_using_pretrained_step2000_epochs10.pkl"
-saveResultsFile = "../results_pieces_using_pretrained_step2000_epochs10.pkl"
+loadResultsFile = ""
+saveResultsFile = "../results_conv_test.pkl"
 
 results = deque()
 try:
@@ -53,8 +53,10 @@ except:
 
 # Build the Q-network
 model = Sequential()
-model.add(Dense(64, input_dim=state_size, activation='relu'))
-model.add(Dense(64, activation='relu'))
+model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(20, 10, 1)))
+model.add(MaxPooling2D((2, 2)))
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(Flatten())
 model.add(Dense(64, activation='relu'))
 model.add(Dense(action_size, activation='linear'))
 model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
@@ -122,7 +124,8 @@ if not pretraining:
         episode += 1
         state = env.reset()
         state = state[0]['board']
-        state = np.reshape(state, [1, state_size])
+        # Reshape the board to (batch_size, height, width, channels)
+        state = state.reshape(1, state.shape[0], state.shape[1], 1)
 
         total_reward = 0
         steps = 0
@@ -134,7 +137,7 @@ if not pretraining:
             observation, reward, terminated, truncated, info = env.step(action)
             steps += 1
             observation = observation['board']
-            observation = np.reshape(observation, [1, state_size])
+            observation = observation.reshape(1, observation.shape[0], observation.shape[1], 1)
 
             memory.append([state, action, reward, observation, terminated])
             if len(memory) > memory_size:
@@ -145,7 +148,7 @@ if not pretraining:
 
             if terminated or truncated:
                 train_network()
-                print("Episode {}: Total Reward: {}, Epsilon: {:.2f}, Drawn Pieces: {}, Lines Cleared: {}".format(episode, total_reward, epsilon, info['state'][1], info['state'][2]))
+                print("Episode {}: Total Reward: {}, Epsilon: {:.2f}, Drawn Pieces: {}, Lines Cleared: {}".format(episode, total_reward, epsilon, info['drawn_pieces'], info['total_lines_cleared']))
                 results.append(
                     {
                         'timestamp': pd.Timestamp.now(),
@@ -156,6 +159,7 @@ if not pretraining:
                         'total_lines_cleared': info['total_lines_cleared'],
                         'total_tetris': info['total_tetris'],
                         'score': info['score'],
+                        'steps': steps
                     }
                 )
 
