@@ -19,7 +19,7 @@ action_size = env.action_space.n
 # Hyperparameters
 learning_rate = 0.001
 gamma = 0.99  # Discount factor
-epsilon = 0.01  # Exploration-exploitation trade-off
+epsilon = 0.99  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
 min_epsilon = 0.01
 batch_size = 512

@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
 
-with open("results.pkl", 'rb') as resultsFile:
+with open("../results_pieces_using_pretrained_step2000_epochs10.pkl", 'rb') as resultsFile:
     results = pickle.load(resultsFile)
     
     timestamps = [item[0] for item in results]
@@ -12,6 +12,7 @@ with open("results.pkl", 'rb') as resultsFile:
     pieces = [item[4] for item in results]
     linesCleared = [item[5] for item in results]
     tetrisClears = [item[6] for item in results]
+    print(len(results))
     
 
     df_days_calories = pd.DataFrame( 
