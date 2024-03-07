@@ -27,19 +27,20 @@ memory_size = 30000
 
 episodePerSave = 10
 
-loadMemoryFile = ""
-loadWeightFile = ""
+loadMemoryFile = "../memory_conv_test.pkl"
+loadWeightFile = "../weight_conv_test.h5"
 
 saveMemoryFile = "../memory_conv_test.pkl"
 saveWeightFile = "../weight_conv_test.h5"
 
-loadResultsFile = ""
+loadResultsFile = "../results_conv_test.pkl"
 saveResultsFile = "../results_conv_test.pkl"
 
 results = deque()
 try:
     with open(loadResultsFile, 'rb') as file:
         results = pickle.load(file)
+        epsilon = results[-1]['epsilon']
 except:
     print("Warning: no results loaded")
 
@@ -91,7 +92,7 @@ def train_network():
     target_values = model.predict_on_batch(states) # 
     target_values[np.arange(batch_size), actions] = targets
 
-    model.fit(states, target_values, epochs=1, verbose=0)
+    model.fit(states, target_values, epochs=1, verbose=1)
 
 def pretraining_action():
     action = input()
@@ -119,7 +120,7 @@ pretraining = False
 
 # Training the agent
 if not pretraining:
-    episode = 0
+    episode = len(results)
     while True:
         episode += 1
         state = env.reset()
