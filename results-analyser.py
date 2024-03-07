@@ -2,16 +2,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
 
-with open("../results_pieces_using_pretrained_step2000_epochs10.pkl", 'rb') as resultsFile:
+with open("../results_conv_test.pkl", 'rb') as resultsFile:
     results = pickle.load(resultsFile)
     
-    timestamps = [item[0] for item in results]
-    episodes = [item[1] for item in results]
-    rewards = [item[2] for item in results]
-    epsilon = [item[3] for item in results]
-    pieces = [item[4] for item in results]
-    linesCleared = [item[5] for item in results]
-    tetrisClears = [item[6] for item in results]
+    timestamps = [item['timestamp'] for item in results]
+    episodes = [item['episode'] for item in results]
+    rewards = [item['total_reward'] for item in results]
+    epsilon = [item['epsilon'] for item in results]
+    pieces = [item['drawn_pieces'] for item in results]
+    linesCleared = [item['total_lines_cleared'] for item in results]
+    tetrisClears = [item['total_tetris'] for item in results]
     print(len(results))
     
 

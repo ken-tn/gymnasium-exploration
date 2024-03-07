@@ -28,9 +28,9 @@ memory_size = 30000
 episodePerSave = 10
 
 loadMemoryFile = "../memory_conv_test.pkl"
-loadWeightFile = "../weight_conv_test.h5"
-
 saveMemoryFile = "../memory_conv_test.pkl"
+
+loadWeightFile = "../weight_conv_test.h5"
 saveWeightFile = "../weight_conv_test.h5"
 
 loadResultsFile = "../results_conv_test.pkl"
