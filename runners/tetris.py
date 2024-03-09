@@ -1,10 +1,10 @@
 import gymnasium as gym
 import numpy as np
 import gym_totris
-import keras
 from keras.models import Sequential
-from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D
+from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Rescaling, LeakyReLU
 from keras.optimizers import Adam
+from keras.losses import MeanSquaredError, MeanAbsoluteError
 import random
 import pickle
 import pandas as pd
@@ -22,19 +22,20 @@ gamma = 0.99  # Discount factor
 epsilon = 0.99  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
 min_epsilon = 0.01
-batch_size = 512
-memory_size = 30000
+batch_size = 4096
+memory_size = 131072
 
 episodePerSave = 10
+experimentName = "rescale_linearconv_leakyrelu_softmax_mse_300kmem_16kbatch"
 
-loadMemoryFile = "../memory_conv_test.pkl"
-saveMemoryFile = "../memory_conv_test.pkl"
+loadMemoryFile = "data/memory_{}.pkl".format(experimentName)
+saveMemoryFile = "data/memory_{}.pkl".format(experimentName)
 
-loadWeightFile = "../weight_conv_test.h5"
-saveWeightFile = "../weight_conv_test.h5"
+loadWeightFile = "training/weight_{}.keras".format(experimentName)
+saveWeightFile = "training/weight_{}.keras".format(experimentName)
 
-loadResultsFile = "../results_conv_test.pkl"
-saveResultsFile = "../results_conv_test.pkl"
+loadResultsFile = "data/results_{}.pkl".format(experimentName)
+saveResultsFile = "data/results_{}.pkl".format(experimentName)
 
 results = deque()
 try:
@@ -48,18 +49,21 @@ except:
 memory = deque(maxlen=memory_size)
 try:
     with open(loadMemoryFile, 'rb') as file:
-        memory = pickle.load(file)
+        oldMemory = pickle.load(file)
+        # handle changing memory_size
+        memory = [x for x in oldMemory]
 except:
     print("Warning: no memory loaded")
 
 # Build the Q-network
 model = Sequential()
-model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(20, 10, 1)))
+model.add(Rescaling(scale=1./7, input_shape=(20, 10, 1))) # [0-7] to [0-1]
+model.add(Conv2D(32, (3, 3), activation='linear')) # input_shape=(20, 10, 1) here if not normalized
 model.add(MaxPooling2D((2, 2)))
-model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(Conv2D(64, (3, 3), activation='linear'))
 model.add(Flatten())
-model.add(Dense(64, activation='relu'))
-model.add(Dense(action_size, activation='linear'))
+model.add(Dense(64, activation=LeakyReLU(alpha=0.01)))
+model.add(Dense(action_size, activation="softmax"))
 model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
 
 model.summary(show_trainable=True)
@@ -140,9 +144,9 @@ if not pretraining:
             observation = observation['board']
             observation = observation.reshape(1, observation.shape[0], observation.shape[1], 1)
 
-            memory.append([state, action, reward, observation, terminated])
-            if len(memory) > memory_size:
+            if len(memory) >= memory_size:
                 memory.pop(0)
+            memory.append([state, action, reward, observation, terminated])
 
             total_reward += reward
             state = observation
@@ -150,6 +154,7 @@ if not pretraining:
             if terminated or truncated:
                 train_network()
                 print("Episode {}: Total Reward: {}, Epsilon: {:.2f}, Drawn Pieces: {}, Lines Cleared: {}".format(episode, total_reward, epsilon, info['drawn_pieces'], info['total_lines_cleared']))
+                print("Memory size: {}".format(len(memory)))
                 results.append(
                     {
                         'timestamp': pd.Timestamp.now(),
@@ -166,12 +171,14 @@ if not pretraining:
 
                 if episode % episodePerSave == 0:
                     model.save_weights(saveWeightFile)
-
+                    
                     with open(saveMemoryFile, 'wb') as output:
                         pickle.dump(memory, output)
 
                     with open(saveResultsFile, 'wb') as output:
                         pickle.dump(results, output)
+                    
+                    tf.keras.backend.clear_session()
                 break
 
         epsilon = max(min_epsilon, epsilon * epsilon_decay)
