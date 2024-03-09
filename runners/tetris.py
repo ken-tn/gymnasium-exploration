@@ -4,7 +4,7 @@ import gym_totris
 from keras.models import Sequential
 from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Rescaling, LeakyReLU
 from keras.optimizers import Adam
-from keras.losses import MeanSquaredError, MeanAbsoluteError
+from keras.losses import MeanSquaredError, CategoricalCrossentropy
 import random
 import pickle
 import pandas as pd
@@ -26,7 +26,7 @@ batch_size = 4096
 memory_size = 131072
 
 episodePerSave = 10
-experimentName = "rescale_linearconv_leakyrelu_softmax_mse_300kmem_16kbatch"
+experimentName = "rescale_leakyconv_reludense_softmax_cce_131kmem_16kbatch"
 
 loadMemoryFile = "data/memory_{}.pkl".format(experimentName)
 saveMemoryFile = "data/memory_{}.pkl".format(experimentName)
@@ -58,13 +58,13 @@ except:
 # Build the Q-network
 model = Sequential()
 model.add(Rescaling(scale=1./7, input_shape=(20, 10, 1))) # [0-7] to [0-1]
-model.add(Conv2D(32, (3, 3), activation='linear')) # input_shape=(20, 10, 1) here if not normalized
+model.add(Conv2D(32, (3, 3), activation=LeakyReLU(alpha=0.01))) # input_shape=(20, 10, 1) here if not normalized
 model.add(MaxPooling2D((2, 2)))
-model.add(Conv2D(64, (3, 3), activation='linear'))
+model.add(Conv2D(64, (3, 3), activation=LeakyReLU(alpha=0.01)))
 model.add(Flatten())
-model.add(Dense(64, activation=LeakyReLU(alpha=0.01)))
+model.add(Dense(64, activation='relu'))
 model.add(Dense(action_size, activation="softmax"))
-model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
+model.compile(loss=CategoricalCrossentropy(), optimizer=Adam(learning_rate=learning_rate))
 
 model.summary(show_trainable=True)
 
@@ -77,7 +77,7 @@ except:
 def choose_action(state):
     if np.random.rand() <= epsilon:
         return np.random.choice(action_size)
-    q_values = model.predict(state)
+    q_values = model.predict_on_batch(state)
     return np.argmax(q_values[0])
 
 # Function to train the Q-network using experience replay
