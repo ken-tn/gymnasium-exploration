@@ -98,8 +98,9 @@ def makeReplayBuffer():
 rb = makeReplayBuffer()
 try:
     with open(loadMemoryFile, 'rb') as file:
-        rb = pickle.load(file)
-except:
+        rb.load_transitions(file)
+        print("Loaded {} replay entries".format(rb.get_stored_size()))
+except ValueError:
     print("Warning: no memory loaded")
 
 # Build the Q-network
@@ -219,7 +220,7 @@ if not pretrainingMode:
             if terminated or truncated:
                 train_network()
                 print("Episode {}: Total Reward: {}, Epsilon: {:.2f}, Drawn Pieces: {}, Lines Cleared: {}".format(episode, total_reward, epsilon, info['drawn_pieces'], info['total_lines_cleared']))
-                print("Memory size: {}".format(rb.get_stored_size()))
+                print("Stored replay buffer: {}".format(rb.get_stored_size()))
                 results.append(
                     {
                         'timestamp': pd.Timestamp.now(),
@@ -238,7 +239,7 @@ if not pretrainingMode:
                     model.save_weights(saveWeightFile)
                     
                     with open(saveMemoryFile, 'wb') as output:
-                        pickle.dump(rb, output)
+                        rb.save_transitions(output)
 
                     with open(saveResultsFile, 'wb') as output:
                         pickle.dump(results, output)
