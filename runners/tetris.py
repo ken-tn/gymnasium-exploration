@@ -2,7 +2,7 @@ import gymnasium as gym
 import numpy as np
 import gym_totris
 from keras.models import Sequential
-from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Rescaling, LeakyReLU
+from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Rescaling, LeakyReLU, InputLayer
 from keras.optimizers import Adam
 from keras.losses import MeanSquaredError, CategoricalCrossentropy
 import random
@@ -10,6 +10,9 @@ import pickle
 import pandas as pd
 import tensorflow as tf
 from collections import deque
+
+demoMode = False
+pretrainingMode = False
 
 # Environment setup
 env = gym.make("TOTRIS-v0")
@@ -21,21 +24,25 @@ learning_rate = 0.001
 gamma = 0.99  # Discount factor
 epsilon = 0.99  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
-min_epsilon = 0.01
-batch_size = 4096
-memory_size = 131072
+min_epsilon = 0.001
+batch_size = 512
+memory_size = 30000
+initial_priority = 1.0
 
-episodePerSave = 10
-experimentName = "rescale_leakyconv_reludense_softmax_cce_131kmem_16kbatch"
+episodePerSave = 20
+if demoMode:
+    episodePerSave = 1
 
-loadMemoryFile = "data/memory_{}.pkl".format(experimentName)
-saveMemoryFile = "data/memory_{}.pkl".format(experimentName)
+experimentName = "smartreward_pretrained_normalized_leakyconv_reludense_linear_mse" # "smartreward_normalized_reludense_sigmoid_mse_131kmem_4kbatch"
 
-loadWeightFile = "training/weight_{}.keras".format(experimentName)
-saveWeightFile = "training/weight_{}.keras".format(experimentName)
+loadMemoryFile = "memory/{}.pkl".format(experimentName)
+saveMemoryFile = "memory/{}.pkl".format(experimentName)
 
-loadResultsFile = "data/results_{}.pkl".format(experimentName)
-saveResultsFile = "data/results_{}.pkl".format(experimentName)
+loadWeightFile = "weights/{}.keras".format(experimentName)
+saveWeightFile = "weights/{}.keras".format(experimentName)
+
+loadResultsFile = "results/{}.pkl".format(experimentName)
+saveResultsFile = "results/{}.pkl".format(experimentName)
 
 results = deque()
 try:
@@ -52,19 +59,23 @@ try:
         oldMemory = pickle.load(file)
         # handle changing memory_size
         memory = [x for x in oldMemory]
+        # for x in memory:
+        #     x[0] = x[0].reshape(1, x[0].shape[0], x[0].shape[1], 1)
 except:
     print("Warning: no memory loaded")
 
 # Build the Q-network
 model = Sequential()
-model.add(Rescaling(scale=1./7, input_shape=(20, 10, 1))) # [0-7] to [0-1]
+#model.add(Rescaling(scale=1./7, input_shape=(20, 10, 1))) # [0-7] to [0-1]
+model.add(InputLayer(input_shape=(20, 10, 1)))
 model.add(Conv2D(32, (3, 3), activation=LeakyReLU(alpha=0.01))) # input_shape=(20, 10, 1) here if not normalized
-model.add(MaxPooling2D((2, 2)))
-model.add(Conv2D(64, (3, 3), activation=LeakyReLU(alpha=0.01)))
+model.add(MaxPooling2D(2, 2))
 model.add(Flatten())
 model.add(Dense(64, activation='relu'))
-model.add(Dense(action_size, activation="softmax"))
-model.compile(loss=CategoricalCrossentropy(), optimizer=Adam(learning_rate=learning_rate))
+model.add(Dense(64, activation='relu'))
+model.add(Dense(64, activation='relu'))
+model.add(Dense(action_size))
+model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
 
 model.summary(show_trainable=True)
 
@@ -78,6 +89,7 @@ def choose_action(state):
     if np.random.rand() <= epsilon:
         return np.random.choice(action_size)
     q_values = model.predict_on_batch(state)
+    # assert model.predict(state).all() == q_values.all()
     return np.argmax(q_values[0])
 
 # Function to train the Q-network using experience replay
@@ -93,7 +105,7 @@ def train_network():
     dones = np.array([item[4] for item in mini_batch])
 
     targets = rewards + gamma * (np.amax(model.predict_on_batch(next_states), axis=1)) * (1 - dones) # Q(s, a)
-    target_values = model.predict_on_batch(states) # 
+    target_values = model.predict_on_batch(states)
     target_values[np.arange(batch_size), actions] = targets
 
     model.fit(states, target_values, epochs=1, verbose=1)
@@ -114,16 +126,13 @@ def pretraining_action():
         return 1
     
 def pretrain():
-    for episode in range(2000):
+    for episode in range(1000):
         print("Pretraining: {}".format(episode))
         train_network()
     model.save_weights(saveWeightFile)
 
-pretraining = False
-#pretrain()
-
 # Training the agent
-if not pretraining:
+if not pretrainingMode:
     episode = len(results)
     while True:
         episode += 1
@@ -131,18 +140,25 @@ if not pretraining:
         state = state[0]['board']
         # Reshape the board to (batch_size, height, width, channels)
         state = state.reshape(1, state.shape[0], state.shape[1], 1)
+        #state = state.reshape(1, state.shape[0], state.shape[1])
+        state[state > 0] = 1
 
         total_reward = 0
         steps = 0
         while True:
             # env.render()
 
-            #action = pretraining_action()
-            action = choose_action(state)
+            action = 0
+            if demoMode:
+                action = pretraining_action()
+            else:
+                action = choose_action(state)
             observation, reward, terminated, truncated, info = env.step(action)
             steps += 1
             observation = observation['board']
             observation = observation.reshape(1, observation.shape[0], observation.shape[1], 1)
+            #observation = observation.reshape(1, observation.shape[0], observation.shape[1])
+            observation[observation > 0] = 1
 
             if len(memory) >= memory_size:
                 memory.pop(0)
@@ -185,3 +201,5 @@ if not pretraining:
 
     # Close the environment
     env.close()
+elif pretrainingMode:
+    pretrain()
