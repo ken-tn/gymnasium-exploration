@@ -1,14 +1,15 @@
 import gymnasium as gym
 import numpy as np
 import gym_totris
+from keras import backend
 from keras.models import Sequential
 from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Rescaling, LeakyReLU, InputLayer
 from keras.optimizers import Adam
-from keras.losses import MeanSquaredError, CategoricalCrossentropy
-import random
+from keras.losses import MeanSquaredError, CategoricalCrossentropy, Huber
+from cpprb import ReplayBuffer, PrioritizedReplayBuffer
+import tensorflow as tf
 import pickle
 import pandas as pd
-import tensorflow as tf
 from collections import deque
 
 demoMode = False
@@ -16,24 +17,31 @@ pretrainingMode = False
 
 # Environment setup
 env = gym.make("TOTRIS-v0")
-state_size = env.observation_space['board'].shape[0]
 action_size = env.action_space.n
 
 # Hyperparameters
 learning_rate = 0.001
+global gamma
 gamma = 0.99  # Discount factor
 epsilon = 0.99  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
 min_epsilon = 0.001
 batch_size = 512
-memory_size = 30000
-initial_priority = 1.0
+N_iteration = 1000
+
+# Experience Replay Parameters
+prioritized = True
+buffer_size = 1e+6
+# Beta linear annealing
+global beta
+beta = 0.4
+beta_step = (1 - beta)/N_iteration
 
 episodePerSave = 20
 if demoMode:
     episodePerSave = 1
 
-experimentName = "smartreward_pretrained_normalized_leakyconv_reludense_linear_mse" # "smartreward_normalized_reludense_sigmoid_mse_131kmem_4kbatch"
+experimentName = "priority_smartreward_pretrained_normalized_leakyconv_reludense_linear_mse" # "smartreward_normalized_reludense_sigmoid_mse_131kmem_4kbatch"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -53,14 +61,44 @@ except:
     print("Warning: no results loaded")
 
 # Experience Replay Memory
-memory = deque(maxlen=memory_size)
+def makeReplayBuffer():
+    # https://ymd_h.gitlab.io/cpprb/examples/dqn_per/
+    global gamma
+
+    # Nstep
+    nstep = 3
+    # nstep = False
+
+    if nstep:
+        Nstep = {"size": nstep, "rew": "rew", "next": "next_obs"}
+        gamma = tf.constant(gamma ** nstep)
+    else:
+        Nstep = None
+        gamma = tf.constant(gamma)
+
+    env_dict = {
+        "obs":{"shape": env.observation_space['board'].shape},
+        "act":{"shape": 1, "dtype": np.ubyte},
+        "rew": {},
+        "next_obs": {"shape": env.observation_space['board'].shape},
+        "done": {}
+    }
+
+    if prioritized:
+        rb = PrioritizedReplayBuffer(buffer_size, env_dict, Nstep=Nstep)
+        # rb = PrioritizedReplayBuffer(buffer_size, env_dict)
+        
+        return rb
+    else:
+        rb = ReplayBuffer(buffer_size,env_dict, Nstep=Nstep)
+        # rb = ReplayBuffer(buffer_size, env_dict)
+
+        return rb
+
+rb = makeReplayBuffer()
 try:
     with open(loadMemoryFile, 'rb') as file:
-        oldMemory = pickle.load(file)
-        # handle changing memory_size
-        memory = [x for x in oldMemory]
-        # for x in memory:
-        #     x[0] = x[0].reshape(1, x[0].shape[0], x[0].shape[1], 1)
+        rb = pickle.load(file)
 except:
     print("Warning: no memory loaded")
 
@@ -75,7 +113,7 @@ model.add(Dense(64, activation='relu'))
 model.add(Dense(64, activation='relu'))
 model.add(Dense(64, activation='relu'))
 model.add(Dense(action_size))
-model.compile(loss='mse', optimizer=Adam(learning_rate=learning_rate))
+model.compile(loss='huber', optimizer=Adam(learning_rate=learning_rate))
 
 model.summary(show_trainable=True)
 
@@ -94,21 +132,34 @@ def choose_action(state):
 
 # Function to train the Q-network using experience replay
 def train_network():
-    if len(memory) < batch_size:
+    if rb.get_stored_size() < batch_size:
         return
+    
+    global beta
+    global gamma
 
-    mini_batch = random.sample(memory, batch_size)
-    states = np.vstack([item[0] for item in mini_batch])
-    actions = np.array([item[1] for item in mini_batch])
-    rewards = np.array([item[2] for item in mini_batch])
-    next_states = np.vstack([item[3] for item in mini_batch])
-    dones = np.array([item[4] for item in mini_batch])
+    if prioritized:
+        mini_batch = rb.sample(batch_size, beta)
+        beta += beta_step
+    else:
+        mini_batch = rb.sample(batch_size)
 
-    targets = rewards + gamma * (np.amax(model.predict_on_batch(next_states), axis=1)) * (1 - dones) # Q(s, a)
-    target_values = model.predict_on_batch(states)
-    target_values[np.arange(batch_size), actions] = targets
+    states = mini_batch["obs"]
+    actions = mini_batch["act"]
+    rewards = mini_batch["rew"]
+    next_states = mini_batch["next_obs"]
+    dones = mini_batch["done"]
 
-    model.fit(states, target_values, epochs=1, verbose=1)
+    target_Q = rewards + gamma * (tf.reduce_max(model.predict_on_batch(next_states), axis=1)) * (1 - dones)
+    Q = model.predict_on_batch(states)
+    TD_error = target_Q - Q[np.arange(batch_size), actions]
+    Q[np.arange(batch_size), actions] = target_Q
+
+    if prioritized:
+        absTD = tf.math.abs(TD_error)
+        rb.update_priorities(mini_batch["indexes"],absTD)
+
+    model.fit(states, Q, epochs=1, verbose=1)
 
 def pretraining_action():
     action = input()
@@ -134,14 +185,15 @@ def pretrain():
 # Training the agent
 if not pretrainingMode:
     episode = len(results)
-    while True:
+    endEpisode = episode + N_iteration
+    while episode < endEpisode:
         episode += 1
-        state = env.reset()
-        state = state[0]['board']
+        observation = env.reset()
+        observation = observation[0]['board']
         # Reshape the board to (batch_size, height, width, channels)
-        state = state.reshape(1, state.shape[0], state.shape[1], 1)
-        #state = state.reshape(1, state.shape[0], state.shape[1])
-        state[state > 0] = 1
+        observation = observation.reshape(1, observation.shape[0], observation.shape[1], 1)
+        #observation = observation.reshape(1, observation.shape[0], observation.shape[1])
+        observation[observation > 0] = 1
 
         total_reward = 0
         steps = 0
@@ -152,25 +204,22 @@ if not pretrainingMode:
             if demoMode:
                 action = pretraining_action()
             else:
-                action = choose_action(state)
-            observation, reward, terminated, truncated, info = env.step(action)
+                action = choose_action(observation)
+            next_observation, reward, terminated, truncated, info = env.step(action)
             steps += 1
-            observation = observation['board']
-            observation = observation.reshape(1, observation.shape[0], observation.shape[1], 1)
+            next_observation = next_observation['board']
+            next_observation = next_observation.reshape(1, next_observation.shape[0], next_observation.shape[1], 1)
             #observation = observation.reshape(1, observation.shape[0], observation.shape[1])
-            observation[observation > 0] = 1
-
-            if len(memory) >= memory_size:
-                memory.pop(0)
-            memory.append([state, action, reward, observation, terminated])
+            next_observation[next_observation > 0] = 1
+            rb.add(obs=observation, act=action, rew=reward, next_obs=next_observation, done=(terminated or truncated))
 
             total_reward += reward
-            state = observation
+            observation = next_observation
 
             if terminated or truncated:
                 train_network()
                 print("Episode {}: Total Reward: {}, Epsilon: {:.2f}, Drawn Pieces: {}, Lines Cleared: {}".format(episode, total_reward, epsilon, info['drawn_pieces'], info['total_lines_cleared']))
-                print("Memory size: {}".format(len(memory)))
+                print("Memory size: {}".format(rb.get_stored_size()))
                 results.append(
                     {
                         'timestamp': pd.Timestamp.now(),
@@ -189,12 +238,12 @@ if not pretrainingMode:
                     model.save_weights(saveWeightFile)
                     
                     with open(saveMemoryFile, 'wb') as output:
-                        pickle.dump(memory, output)
+                        pickle.dump(rb, output)
 
                     with open(saveResultsFile, 'wb') as output:
                         pickle.dump(results, output)
                     
-                    tf.keras.backend.clear_session()
+                    backend.clear_session()
                 break
 
         epsilon = max(min_epsilon, epsilon * epsilon_decay)
