@@ -2,8 +2,8 @@ import gymnasium as gym
 import numpy as np
 import gym_totris
 from keras import backend
-from keras.models import Sequential
-from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Rescaling, LeakyReLU, InputLayer
+from keras.models import Sequential, clone_model, Model
+from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Rescaling, LeakyReLU, Input, concatenate
 from keras.optimizers import Adam
 from keras.losses import MeanSquaredError, CategoricalCrossentropy, Huber
 from cpprb import ReplayBuffer, PrioritizedReplayBuffer
@@ -20,14 +20,15 @@ env = gym.make("TOTRIS-v0")
 action_size = env.action_space.n
 
 # Hyperparameters
-learning_rate = 0.001
+learning_rate = 0.00025
 global gamma
 gamma = 0.99  # Discount factor
-epsilon = 0.99  # Exploration-exploitation trade-off
+epsilon = 0.1  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
-min_epsilon = 0.001
-batch_size = 512
-N_iteration = 1000
+min_epsilon = 0.05
+batch_size = 64
+N_iteration = 10000
+target_update_freq = 500
 
 # Experience Replay Parameters
 prioritized = True
@@ -41,7 +42,7 @@ episodePerSave = 20
 if demoMode:
     episodePerSave = 1
 
-experimentName = "priority_smartreward_pretrained_normalized_leakyconv_reludense_linear_mse" # "smartreward_normalized_reludense_sigmoid_mse_131kmem_4kbatch"
+experimentName = "nextpiecescore_priority_smartreward_DDQN_double_convrelu_dense512relu_huber_64batch"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -76,11 +77,12 @@ def makeReplayBuffer():
         Nstep = None
         gamma = tf.constant(gamma)
 
+    envshape = (1, 202)
     env_dict = {
-        "obs":{"shape": env.observation_space['board'].shape},
+        "obs":{"shape": envshape},
         "act":{"shape": 1, "dtype": np.ubyte},
         "rew": {},
-        "next_obs": {"shape": env.observation_space['board'].shape},
+        "next_obs": {"shape": envshape},
         "done": {}
     }
 
@@ -100,23 +102,57 @@ try:
     with open(loadMemoryFile, 'rb') as file:
         rb.load_transitions(file)
         print("Loaded {} replay entries".format(rb.get_stored_size()))
-except ValueError:
+except:
     print("Warning: no memory loaded")
 
-# Build the Q-network
-model = Sequential()
-#model.add(Rescaling(scale=1./7, input_shape=(20, 10, 1))) # [0-7] to [0-1]
-model.add(InputLayer(input_shape=(20, 10, 1)))
-model.add(Conv2D(32, (3, 3), activation=LeakyReLU(alpha=0.01))) # input_shape=(20, 10, 1) here if not normalized
-model.add(MaxPooling2D(2, 2))
-model.add(Flatten())
-model.add(Dense(64, activation='relu'))
-model.add(Dense(64, activation='relu'))
-model.add(Dense(64, activation='relu'))
-model.add(Dense(action_size))
-model.compile(loss='huber', optimizer=Adam(learning_rate=learning_rate))
+optimizer=Adam(learning_rate=learning_rate)
 
-model.summary(show_trainable=True)
+@tf.function
+def Huber_loss(absTD):
+    return tf.where(absTD > 1.0, absTD, tf.math.square(absTD))
+
+@tf.function
+def MSE(absTD):
+    return tf.math.square(absTD)
+
+loss_func = Huber_loss
+
+# Build the Q-network
+# model = Sequential()
+# #model.add(Rescaling(scale=1./7, input_shape=(20, 10, 1))) # [0-7] to [0-1]
+# model.add(Input(input_shape=(20, 10, 1)))
+# model.add(Conv2D(32, (3, 3), activation='relu', strides=2)) # input_shape=(20, 10, 1) here if not normalized
+# model.add(Conv2D(64, (3, 3)))
+# model.add(Flatten())
+# model.add(Dense(512))
+# model.add(Dense(action_size))
+# model.summary(show_trainable=True)
+
+# Define input layers for each component of the observation space
+board_input = Input(shape=(20, 10, 1), name='board')
+next_piece_input = Input(shape=(7,), name='next_piece')
+score_input = tf.keras.layers.Input(shape=(1,), name='score')
+
+# Add convolutional layers
+conv1 = Conv2D(32, (3, 3), activation='relu', strides=2, padding='same')(board_input)
+conv2 = Conv2D(64, (3, 3), padding='same')(conv1)
+
+# Flatten the convolutional layer output
+flattened_conv = Flatten()(conv2)
+
+# Concatenate the flattened convolutional layer output and next_piece input
+concatenated_inputs = concatenate([flattened_conv, next_piece_input, score_input])
+
+# Add dense layers
+dense1 = Dense(512)(concatenated_inputs)
+
+# Output layer
+output = Dense(action_size)(dense1)
+
+# Define the model
+model = Model(inputs=[board_input, next_piece_input, score_input], outputs=output)
+model.summary()
+target_model = clone_model(model)
 
 try:
     model.load_weights(loadWeightFile)
@@ -127,10 +163,52 @@ except:
 def choose_action(state):
     if np.random.rand() <= epsilon:
         return np.random.choice(action_size)
-    q_values = model.predict_on_batch(state)
+    q_values = model(restoreFlattenedObs(state))
     # assert model.predict(state).all() == q_values.all()
     return np.argmax(q_values[0])
 
+@tf.function
+def Huber_loss(absTD):
+    return tf.where(absTD > 1.0, absTD, tf.math.square(absTD))
+
+@tf.function
+def Q_func(model,obs,act,act_shape):
+    return tf.reduce_sum(model(obs) * tf.one_hot(act,depth=act_shape), axis=1)
+
+@tf.function
+def DQN_target_func(model,target,next_obs,rew,done,gamma,act_shape):
+    return gamma*tf.reduce_max(target(next_obs),axis=1)*(1.0-done) + rew
+
+@tf.function
+def Double_DQN_target_func(model,target,next_obs,rew,done,gamma,act_shape):
+    """
+    Double DQN: https://arxiv.org/abs/1509.06461
+    """
+    act = tf.math.argmax(model(next_obs),axis=1)
+    return gamma*tf.reduce_sum(target(next_obs)*tf.one_hot(act,depth=act_shape), axis=1)*(1.0-done) + rew
+
+def restoreFlattenedObs(flattened_observation):
+    # Example shapes for different components
+    board_shape = (20, 10)
+    next_piece_shape = (1,)
+    score_shape = (1,)
+
+    flattened_observation = np.array([x for x in flattened_observation])
+
+    # Calculate indices for slicing
+    board_end_index = np.prod(board_shape)
+    next_piece_end_index = board_end_index + np.prod(next_piece_shape)
+
+    # Restore the components from the flattened observation
+    board = flattened_observation[:board_end_index].reshape(board_shape)
+    board = board.reshape(1, board_shape[0], board_shape[1], 1)
+    next_piece = flattened_observation[board_end_index:next_piece_end_index].reshape(next_piece_shape)
+    next_piece = np.array(tf.one_hot(next_piece, depth=7)).reshape(1, -1)
+    score = flattened_observation[next_piece_end_index:]
+    
+    return [board, next_piece, score]
+
+target_func = Double_DQN_target_func
 # Function to train the Q-network using experience replay
 def train_network():
     if rb.get_stored_size() < batch_size:
@@ -140,27 +218,87 @@ def train_network():
     global gamma
 
     if prioritized:
-        mini_batch = rb.sample(batch_size, beta)
+        sample = rb.sample(batch_size, beta)
         beta += beta_step
     else:
-        mini_batch = rb.sample(batch_size)
+        sample = rb.sample(batch_size)
 
-    states = mini_batch["obs"]
-    actions = mini_batch["act"]
-    rewards = mini_batch["rew"]
-    next_states = mini_batch["next_obs"]
-    dones = mini_batch["done"]
+    weights = sample["weights"].ravel() if prioritized else tf.constant(1.0)
 
-    target_Q = rewards + gamma * (tf.reduce_max(model.predict_on_batch(next_states), axis=1)) * (1 - dones)
-    Q = model.predict_on_batch(states)
-    TD_error = target_Q - Q[np.arange(batch_size), actions]
-    Q[np.arange(batch_size), actions] = target_Q
+    boards = []
+    next_pieces = []
+    scores = []
+    # Iterate over each element in sample["obs"]
+    for i in range(len(sample["obs"])):
+        # Restore the flattened observation
+        restored_observation = restoreFlattenedObs(sample["obs"][i][0])
+        
+        # Append each component to the corresponding list
+        boards.append(restored_observation[0])
+        next_pieces.append(restored_observation[1])
+        scores.append(restored_observation[2])
+
+    # Convert the lists to TensorFlow tensors if necessary
+    boards = tf.constant(boards)
+    next_pieces = tf.constant(next_pieces)
+    scores = tf.constant(scores)
+
+    boards = tf.squeeze(boards, axis=1)
+    next_pieces = tf.squeeze(next_pieces, axis=1)
+    scores = tf.squeeze(scores, axis=1)
+    sample["obs"] = [boards, next_pieces, scores]
+
+    boards = []
+    next_pieces = []
+    scores = []
+    # Iterate over each element in sample["obs"]
+    for i in range(len(sample["next_obs"])):
+        # Restore the flattened observation
+        restored_observation = restoreFlattenedObs(sample["next_obs"][i][0])
+        
+        # Append each component to the corresponding list
+        boards.append(restored_observation[0])
+        next_pieces.append(restored_observation[1])
+        scores.append(restored_observation[2])
+
+    # Convert the lists to TensorFlow tensors if necessary
+    boards = tf.constant(boards)
+    next_pieces = tf.constant(next_pieces)
+    scores = tf.constant(scores)
+
+    boards = tf.squeeze(boards, axis=1)
+    next_pieces = tf.squeeze(next_pieces, axis=1)
+    scores = tf.squeeze(scores, axis=1)
+    sample["next_obs"] = [boards, next_pieces, scores]
+    # terrible
+
+    with tf.GradientTape() as tape:
+        tape.watch(model.trainable_weights)
+        Q =  Q_func(model,
+                    sample["obs"],
+                    tf.constant(sample["act"].ravel()),
+                    tf.constant(action_size, dtype="int32"))
+        target_Q = target_func(model,target_model,
+                               sample['next_obs'],
+                               tf.constant(sample["rew"].ravel()),
+                               tf.constant(sample["done"].ravel()),
+                               gamma,
+                               tf.constant(action_size, dtype="int32"))
+        absTD = tf.math.abs(target_Q - Q)
+        loss = tf.reduce_mean(loss_func(absTD)*weights)
+
+    grad = tape.gradient(loss,model.trainable_weights)
+    optimizer.apply_gradients(zip(grad,model.trainable_weights))
+    
+    print("Loss: {}".format(loss))
 
     if prioritized:
-        absTD = tf.math.abs(TD_error)
-        rb.update_priorities(mini_batch["indexes"],absTD)
-
-    model.fit(states, Q, epochs=1, verbose=1)
+        Q = Q_func(model,
+                sample["obs"],
+                tf.constant(sample["act"].ravel()),
+                tf.constant(action_size, dtype="int32"))
+        absTD = tf.math.abs(target_Q - Q)
+        rb.update_priorities(sample["indexes"], absTD)
 
 def pretraining_action():
     action = input()
@@ -186,18 +324,17 @@ def pretrain():
 # Training the agent
 if not pretrainingMode:
     episode = len(results)
-    endEpisode = episode + N_iteration
-    while episode < endEpisode:
+    while episode < N_iteration:
         episode += 1
-        observation = env.reset()
-        observation = observation[0]['board']
-        # Reshape the board to (batch_size, height, width, channels)
-        observation = observation.reshape(1, observation.shape[0], observation.shape[1], 1)
-        #observation = observation.reshape(1, observation.shape[0], observation.shape[1])
-        observation[observation > 0] = 1
-
         total_reward = 0
         steps = 0
+
+        observation, info = env.reset()
+        observation = np.concatenate([
+            observation["board"].flatten(),
+            observation["next_piece"],
+            observation["score"]
+        ])
         while True:
             # env.render()
 
@@ -207,18 +344,20 @@ if not pretrainingMode:
             else:
                 action = choose_action(observation)
             next_observation, reward, terminated, truncated, info = env.step(action)
-            steps += 1
-            next_observation = next_observation['board']
-            next_observation = next_observation.reshape(1, next_observation.shape[0], next_observation.shape[1], 1)
-            #observation = observation.reshape(1, observation.shape[0], observation.shape[1])
-            next_observation[next_observation > 0] = 1
+            next_observation = np.concatenate([
+                next_observation["board"].flatten(),
+                next_observation["next_piece"],
+                next_observation["score"]
+            ])
             rb.add(obs=observation, act=action, rew=reward, next_obs=next_observation, done=(terminated or truncated))
 
+            steps += 1
             total_reward += reward
             observation = next_observation
 
             if terminated or truncated:
                 train_network()
+                rb.on_episode_end()
                 print("Episode {}: Total Reward: {}, Epsilon: {:.2f}, Drawn Pieces: {}, Lines Cleared: {}".format(episode, total_reward, epsilon, info['drawn_pieces'], info['total_lines_cleared']))
                 print("Stored replay buffer: {}".format(rb.get_stored_size()))
                 results.append(
@@ -230,10 +369,13 @@ if not pretrainingMode:
                         'drawn_pieces': info['drawn_pieces'],
                         'total_lines_cleared': info['total_lines_cleared'],
                         'total_tetris': info['total_tetris'],
-                        'score': info['score'],
+                        'score': observation[-1],
                         'steps': steps
                     }
                 )
+
+                if episode % target_update_freq == 0:
+                    target_model.set_weights(model.get_weights())
 
                 if episode % episodePerSave == 0:
                     model.save_weights(saveWeightFile)
