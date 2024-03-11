@@ -23,7 +23,7 @@ action_size = env.action_space.n
 learning_rate = 0.00025
 global gamma
 gamma = 0.99  # Discount factor
-epsilon = 0.1  # Exploration-exploitation trade-off
+epsilon = 0.99  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
 min_epsilon = 0.05
 batch_size = 64
