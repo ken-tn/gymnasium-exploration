@@ -42,7 +42,7 @@ episodePerSave = 20
 if demoMode:
     episodePerSave = 1
 
-experimentName = "nextpiecescore_priority_smartreward_DDQN_double_convrelu_dense512relu_huber_64batch"
+experimentName = "nextpiecescore_priority_smartnormalizedreward_DDQN_double_convrelu_dense512relu_huber_64batch"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -208,6 +208,31 @@ def restoreFlattenedObs(flattened_observation):
     
     return [board, next_piece, score]
 
+def getTensors(obs):
+    boards = []
+    next_pieces = []
+    scores = []
+    # Iterate over each element in sample["obs"]
+    for x in obs:
+        # Restore the flattened observation
+        restored_observation = restoreFlattenedObs(x[0])
+        
+        # Append each component to the corresponding list
+        boards.append(restored_observation[0])
+        next_pieces.append(restored_observation[1])
+        scores.append(restored_observation[2])
+
+    # Convert the lists to TensorFlow tensors if necessary
+    boards = tf.constant(boards)
+    next_pieces = tf.constant(next_pieces)
+    scores = tf.constant(scores)
+
+    boards = tf.squeeze(boards, axis=1)
+    next_pieces = tf.squeeze(next_pieces, axis=1)
+    scores = tf.squeeze(scores, axis=1)
+
+    return [boards, next_pieces, scores]
+
 target_func = Double_DQN_target_func
 # Function to train the Q-network using experience replay
 def train_network():
@@ -225,52 +250,8 @@ def train_network():
 
     weights = sample["weights"].ravel() if prioritized else tf.constant(1.0)
 
-    boards = []
-    next_pieces = []
-    scores = []
-    # Iterate over each element in sample["obs"]
-    for i in range(len(sample["obs"])):
-        # Restore the flattened observation
-        restored_observation = restoreFlattenedObs(sample["obs"][i][0])
-        
-        # Append each component to the corresponding list
-        boards.append(restored_observation[0])
-        next_pieces.append(restored_observation[1])
-        scores.append(restored_observation[2])
-
-    # Convert the lists to TensorFlow tensors if necessary
-    boards = tf.constant(boards)
-    next_pieces = tf.constant(next_pieces)
-    scores = tf.constant(scores)
-
-    boards = tf.squeeze(boards, axis=1)
-    next_pieces = tf.squeeze(next_pieces, axis=1)
-    scores = tf.squeeze(scores, axis=1)
-    sample["obs"] = [boards, next_pieces, scores]
-
-    boards = []
-    next_pieces = []
-    scores = []
-    # Iterate over each element in sample["obs"]
-    for i in range(len(sample["next_obs"])):
-        # Restore the flattened observation
-        restored_observation = restoreFlattenedObs(sample["next_obs"][i][0])
-        
-        # Append each component to the corresponding list
-        boards.append(restored_observation[0])
-        next_pieces.append(restored_observation[1])
-        scores.append(restored_observation[2])
-
-    # Convert the lists to TensorFlow tensors if necessary
-    boards = tf.constant(boards)
-    next_pieces = tf.constant(next_pieces)
-    scores = tf.constant(scores)
-
-    boards = tf.squeeze(boards, axis=1)
-    next_pieces = tf.squeeze(next_pieces, axis=1)
-    scores = tf.squeeze(scores, axis=1)
-    sample["next_obs"] = [boards, next_pieces, scores]
-    # terrible
+    sample["obs"] = getTensors(sample["obs"])
+    sample["next_obs"] = getTensors(sample["next_obs"])
 
     with tf.GradientTape() as tape:
         tape.watch(model.trainable_weights)
