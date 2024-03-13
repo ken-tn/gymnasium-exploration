@@ -20,13 +20,13 @@ env = gym.make("TOTRIS-v0")
 action_size = env.action_space.n
 
 # Hyperparameters
-learning_rate = 0.00025
+learning_rate = 0.001 #0.00025
 global gamma
 gamma = 0.99  # Discount factor
 epsilon = 0.99  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
 min_epsilon = 0.05
-batch_size = 64
+batch_size = 512
 N_iteration = 10000
 target_update_freq = 500
 
@@ -42,7 +42,7 @@ episodePerSave = 20
 if demoMode:
     episodePerSave = 1
 
-experimentName = "nextpiecescore_priority_smartnormalizedreward_DDQN_double_convrelu_dense512relu_huber_64batch"
+experimentName = "normalizedboard_priority_heuristicreward_DDQN_nextpiecescore_dense512relu_dense64relu_huber_512batch"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -139,15 +139,20 @@ conv2 = Conv2D(64, (3, 3), padding='same')(conv1)
 
 # Flatten the convolutional layer output
 flattened_conv = Flatten()(conv2)
+flattened_board = Flatten()(board_input)
 
-# Concatenate the flattened convolutional layer output and next_piece input
-concatenated_inputs = concatenate([flattened_conv, next_piece_input, score_input])
+# Concatenate the flattened convolutional layer with additional inputs
+#concatenated_inputs = concatenate([flattened_conv, next_piece_input, score_input])
+concatenated_inputs = concatenate([flattened_board, next_piece_input, score_input])
 
 # Add dense layers
-dense1 = Dense(512)(concatenated_inputs)
+dense1 = Dense(800, activation="relu")(concatenated_inputs)
+dense2 = Dense(400, activation="relu")(dense1)
+dense3 = Dense(200, activation="relu")(dense2)
+dense4 = Dense(50, activation="relu")(dense3)
 
 # Output layer
-output = Dense(action_size)(dense1)
+output = Dense(action_size)(dense4)
 
 # Define the model
 model = Model(inputs=[board_input, next_piece_input, score_input], outputs=output)
@@ -163,8 +168,7 @@ except:
 def choose_action(state):
     if np.random.rand() <= epsilon:
         return np.random.choice(action_size)
-    q_values = model(restoreFlattenedObs(state))
-    # assert model.predict(state).all() == q_values.all()
+    q_values = model(restoreFlattenedObs(state)) # same as model.predict_on_batch
     return np.argmax(q_values[0])
 
 @tf.function
@@ -191,7 +195,6 @@ def restoreFlattenedObs(flattened_observation):
     # Example shapes for different components
     board_shape = (20, 10)
     next_piece_shape = (1,)
-    score_shape = (1,)
 
     flattened_observation = np.array([x for x in flattened_observation])
 
@@ -202,6 +205,7 @@ def restoreFlattenedObs(flattened_observation):
     # Restore the components from the flattened observation
     board = flattened_observation[:board_end_index].reshape(board_shape)
     board = board.reshape(1, board_shape[0], board_shape[1], 1)
+    board[board > 0] = 1 # normalize values
     next_piece = flattened_observation[board_end_index:next_piece_end_index].reshape(next_piece_shape)
     next_piece = np.array(tf.one_hot(next_piece, depth=7)).reshape(1, -1)
     score = flattened_observation[next_piece_end_index:]
@@ -212,7 +216,7 @@ def getTensors(obs):
     boards = []
     next_pieces = []
     scores = []
-    # Iterate over each element in sample["obs"]
+    # Iterate over each element in observation
     for x in obs:
         # Restore the flattened observation
         restored_observation = restoreFlattenedObs(x[0])
@@ -222,14 +226,10 @@ def getTensors(obs):
         next_pieces.append(restored_observation[1])
         scores.append(restored_observation[2])
 
-    # Convert the lists to TensorFlow tensors if necessary
-    boards = tf.constant(boards)
-    next_pieces = tf.constant(next_pieces)
-    scores = tf.constant(scores)
-
-    boards = tf.squeeze(boards, axis=1)
-    next_pieces = tf.squeeze(next_pieces, axis=1)
-    scores = tf.squeeze(scores, axis=1)
+    # Convert the lists to TensorFlow tensors
+    boards = tf.squeeze(tf.constant(boards), axis=1)
+    next_pieces = tf.squeeze(tf.constant(next_pieces), axis=1)
+    scores = tf.squeeze(tf.constant(scores), axis=1)
 
     return [boards, next_pieces, scores]
 
