@@ -20,7 +20,7 @@ env = gym.make("TOTRIS-v0")
 action_size = env.action_space.n
 
 # Hyperparameters
-learning_rate = 0.001 #0.00025
+learning_rate = 0.0005 #0.00025
 global gamma
 gamma = 0.99  # Discount factor
 epsilon = 0.99  # Exploration-exploitation trade-off
@@ -146,13 +146,12 @@ flattened_board = Flatten()(board_input)
 concatenated_inputs = concatenate([flattened_board, next_piece_input, score_input])
 
 # Add dense layers
-dense1 = Dense(800, activation="relu")(concatenated_inputs)
-dense2 = Dense(400, activation="relu")(dense1)
-dense3 = Dense(200, activation="relu")(dense2)
-dense4 = Dense(50, activation="relu")(dense3)
+dense1 = Dense(512, activation="relu")(concatenated_inputs)
+dense2 = Dense(1024, activation="relu")(dense1)
+dense3 = Dense(1024, activation="relu")(dense2)
 
 # Output layer
-output = Dense(action_size)(dense4)
+output = Dense(action_size)(dense3)
 
 # Define the model
 model = Model(inputs=[board_input, next_piece_input, score_input], outputs=output)
