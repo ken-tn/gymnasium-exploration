@@ -118,16 +118,6 @@ def MSE(absTD):
 loss_func = Huber_loss
 
 # Build the Q-network
-# model = Sequential()
-# #model.add(Rescaling(scale=1./7, input_shape=(20, 10, 1))) # [0-7] to [0-1]
-# model.add(Input(input_shape=(20, 10, 1)))
-# model.add(Conv2D(32, (3, 3), activation='relu', strides=2)) # input_shape=(20, 10, 1) here if not normalized
-# model.add(Conv2D(64, (3, 3)))
-# model.add(Flatten())
-# model.add(Dense(512))
-# model.add(Dense(action_size))
-# model.summary(show_trainable=True)
-
 # Define input layers for each component of the observation space
 board_input = Input(shape=(20, 10, 1), name='board')
 next_piece_input = Input(shape=(7,), name='next_piece')
