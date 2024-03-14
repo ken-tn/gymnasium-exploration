@@ -20,14 +20,14 @@ env = gym.make("TOTRIS-v0")
 action_size = env.action_space.n
 
 # Hyperparameters
-learning_rate = 0.0005 #0.00025
+learning_rate = 0.00025 #0.00025
 global gamma
 gamma = 0.99  # Discount factor
 epsilon = 0.99  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
 min_epsilon = 0.05
-batch_size = 512
-N_iteration = 10000
+batch_size = 64
+N_iteration = 100000
 target_update_freq = 500
 
 # Experience Replay Parameters
@@ -38,11 +38,11 @@ global beta
 beta = 0.4
 beta_step = (1 - beta)/N_iteration
 
-episodePerSave = 20
+episodePerSave = 60
 if demoMode:
     episodePerSave = 1
 
-experimentName = "normalizedboard_priority_heuristicreward_DDQN_nextpiecescore_dense512relu_dense64relu_huber_512batch"
+experimentName = "highrescaleboard_truncated_priority_trueheuristicreward_DDQN_nextpiecescore_convdoubleleakyrelu_dense512_dense64_huber_64batch"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -131,27 +131,26 @@ loss_func = Huber_loss
 # Define input layers for each component of the observation space
 board_input = Input(shape=(20, 10, 1), name='board')
 next_piece_input = Input(shape=(7,), name='next_piece')
-score_input = tf.keras.layers.Input(shape=(1,), name='score')
+score_input = Input(shape=(1,), name='score')
 
 # Add convolutional layers
-conv1 = Conv2D(32, (3, 3), activation='relu', strides=2, padding='same')(board_input)
-conv2 = Conv2D(64, (3, 3), padding='same')(conv1)
+rescaled_board = Rescaling(scale=(1./7)*255, input_shape=(20, 10, 1))(board_input)
+conv1 = Conv2D(32, (3, 3), activation=LeakyReLU(alpha=0.001), strides=2, padding='same')(rescaled_board)
+conv2 = Conv2D(64, (3, 3), activation=LeakyReLU(alpha=0.001), padding='same')(conv1)
 
 # Flatten the convolutional layer output
 flattened_conv = Flatten()(conv2)
 flattened_board = Flatten()(board_input)
 
 # Concatenate the flattened convolutional layer with additional inputs
-#concatenated_inputs = concatenate([flattened_conv, next_piece_input, score_input])
-concatenated_inputs = concatenate([flattened_board, next_piece_input, score_input])
+concatenated_inputs = concatenate([flattened_conv, next_piece_input, score_input])
+#concatenated_inputs = concatenate([flattened_board, next_piece_input, score_input])
 
 # Add dense layers
-dense1 = Dense(512, activation="relu")(concatenated_inputs)
-dense2 = Dense(1024, activation="relu")(dense1)
-dense3 = Dense(1024, activation="relu")(dense2)
+dense1 = Dense(512)(concatenated_inputs)
 
 # Output layer
-output = Dense(action_size)(dense3)
+output = Dense(action_size)(dense1)
 
 # Define the model
 model = Model(inputs=[board_input, next_piece_input, score_input], outputs=output)
@@ -204,7 +203,8 @@ def restoreFlattenedObs(flattened_observation):
     # Restore the components from the flattened observation
     board = flattened_observation[:board_end_index].reshape(board_shape)
     board = board.reshape(1, board_shape[0], board_shape[1], 1)
-    board[board > 0] = 1 # normalize values
+    # temp_model=Model(board_input, rescaled_board)
+    # print(temp_model(board))
     next_piece = flattened_observation[board_end_index:next_piece_end_index].reshape(next_piece_shape)
     next_piece = np.array(tf.one_hot(next_piece, depth=7)).reshape(1, -1)
     score = flattened_observation[next_piece_end_index:]
@@ -226,9 +226,9 @@ def getTensors(obs):
         scores.append(restored_observation[2])
 
     # Convert the lists to TensorFlow tensors
-    boards = tf.squeeze(tf.constant(boards), axis=1)
-    next_pieces = tf.squeeze(tf.constant(next_pieces), axis=1)
-    scores = tf.squeeze(tf.constant(scores), axis=1)
+    boards = tf.squeeze(tf.constant(np.array(boards)), axis=1)
+    next_pieces = tf.squeeze(tf.constant(np.array(next_pieces)), axis=1)
+    scores = tf.squeeze(tf.constant(np.array(scores)), axis=1)
 
     return [boards, next_pieces, scores]
 
@@ -324,6 +324,8 @@ if not pretrainingMode:
             else:
                 action = choose_action(observation)
             next_observation, reward, terminated, truncated, info = env.step(action)
+            if truncated:
+                reward = -1 # a suboptimal move
             next_observation = np.concatenate([
                 next_observation["board"].flatten(),
                 next_observation["next_piece"],
