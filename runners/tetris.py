@@ -183,9 +183,10 @@ def Double_DQN_target_func(model,target,next_obs,rew,done,gamma,act_shape):
 board_shape = env.observation_space['board'].shape
 board_end_index = np.prod(board_shape)
 next_piece_end_index = board_end_index + np.prod(env.observation_space['next_piece'].shape)
+board_reshaped = (1,) + board_shape + (1,)
 def restoreFlattenedObs(flattened_observation):
     # Restore the components from the flattened observation
-    board = flattened_observation[:board_end_index].reshape((1,) + board_shape + (1,))
+    board = flattened_observation[:board_end_index].reshape(board_reshaped)
     # temp_model=Model(board_input, rescaled_board)
     # print(temp_model(board))
     next_piece = flattened_observation[board_end_index:next_piece_end_index].reshape((1,))
