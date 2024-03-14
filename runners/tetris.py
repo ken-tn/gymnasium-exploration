@@ -24,7 +24,7 @@ learning_rate = 0.00025 #0.00025
 global gamma
 gamma = 0.99  # Discount factor
 epsilon = 0.99  # Exploration-exploitation trade-off
-epsilon_decay = 0.998
+epsilon_decay = 0.9998
 min_epsilon = 0.05
 batch_size = 64
 N_iteration = 100000
@@ -42,7 +42,7 @@ episodePerSave = 60
 if demoMode:
     episodePerSave = 1
 
-experimentName = "highrescaleboard_truncated_priority_trueheuristicreward_DDQN_nextpiecescore_convdoubleleakyrelu_dense512_dense64_huber_64batch"
+experimentName = "highrescaleboard_truncated_priority_simulatedheuristicreward_DDQN_nextpiecescore_convdoubleleakyrelu_dense512_dense64_huber_64batch"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -134,7 +134,7 @@ next_piece_input = Input(shape=(7,), name='next_piece')
 score_input = Input(shape=(1,), name='score')
 
 # Add convolutional layers
-rescaled_board = Rescaling(scale=(1./7)*255, input_shape=(20, 10, 1))(board_input)
+rescaled_board = Rescaling(scale=(1./7), input_shape=(20, 10, 1))(board_input)
 conv1 = Conv2D(32, (3, 3), activation=LeakyReLU(alpha=0.001), strides=2, padding='same')(rescaled_board)
 conv2 = Conv2D(64, (3, 3), activation=LeakyReLU(alpha=0.001), padding='same')(conv1)
 
@@ -212,23 +212,23 @@ def restoreFlattenedObs(flattened_observation):
     return [board, next_piece, score]
 
 def getTensors(obs):
-    boards = []
-    next_pieces = []
-    scores = []
+    boards = np.zeros((batch_size, 20, 10, 1))
+    next_pieces = np.zeros((batch_size, 7))
+    scores = np.zeros((batch_size, 1))
     # Iterate over each element in observation
-    for x in obs:
+    for i in range(len(obs)):
         # Restore the flattened observation
-        restored_observation = restoreFlattenedObs(x[0])
+        restored_observation = restoreFlattenedObs(obs[i][0])
         
         # Append each component to the corresponding list
-        boards.append(restored_observation[0])
-        next_pieces.append(restored_observation[1])
-        scores.append(restored_observation[2])
+        boards[i] = restored_observation[0]
+        next_pieces[i] = restored_observation[1]
+        scores[i] = restored_observation[2]
 
     # Convert the lists to TensorFlow tensors
-    boards = tf.squeeze(tf.constant(np.array(boards)), axis=1)
-    next_pieces = tf.squeeze(tf.constant(np.array(next_pieces)), axis=1)
-    scores = tf.squeeze(tf.constant(np.array(scores)), axis=1)
+    boards = tf.constant(boards)
+    next_pieces = tf.constant(next_pieces)
+    scores = tf.constant(scores)
 
     return [boards, next_pieces, scores]
 
