@@ -189,8 +189,7 @@ def restoreFlattenedObs(flattened_observation):
     board = flattened_observation[:board_end_index].reshape(board_reshaped)
     # temp_model=Model(board_input, rescaled_board)
     # print(temp_model(board))
-    next_piece = flattened_observation[board_end_index:next_piece_end_index].reshape((1,))
-    next_piece = np.array(tf.one_hot(next_piece, depth=7)).reshape(1, -1)
+    next_piece = np.array(tf.one_hot(flattened_observation[board_end_index:next_piece_end_index], depth=7)).reshape(1, -1)
     score = flattened_observation[next_piece_end_index:]
     
     return [board, next_piece, score]
