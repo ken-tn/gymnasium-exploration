@@ -191,8 +191,7 @@ def restoreFlattenedObs(flattened_observation):
     next_piece_end_index = board_end_index + np.prod(next_piece_shape)
 
     # Restore the components from the flattened observation
-    board = flattened_observation[:board_end_index].reshape(board_shape)
-    board = board.reshape(1, board_shape[0], board_shape[1], 1)
+    board = flattened_observation[:board_end_index].reshape((1,) + board_shape + (1,))
     # temp_model=Model(board_input, rescaled_board)
     # print(temp_model(board))
     next_piece = flattened_observation[board_end_index:next_piece_end_index].reshape(next_piece_shape)
@@ -314,8 +313,6 @@ if not pretrainingMode:
             else:
                 action = choose_action(observation)
             next_observation, reward, terminated, truncated, info = env.step(action)
-            if truncated:
-                reward = -1 # a suboptimal move
             next_observation = np.concatenate([
                 next_observation["board"].flatten(),
                 next_observation["next_piece"],
