@@ -179,22 +179,16 @@ def Double_DQN_target_func(model,target,next_obs,rew,done,gamma,act_shape):
     act = tf.math.argmax(model(next_obs),axis=1)
     return gamma*tf.reduce_sum(target(next_obs)*tf.one_hot(act,depth=act_shape), axis=1)*(1.0-done) + rew
 
+# Calculate indices for slicing
+board_shape = env.observation_space['board'].shape
+board_end_index = np.prod(board_shape)
+next_piece_end_index = board_end_index + np.prod(env.observation_space['next_piece'].shape)
 def restoreFlattenedObs(flattened_observation):
-    # Example shapes for different components
-    board_shape = (20, 10)
-    next_piece_shape = (1,)
-
-    flattened_observation = np.array([x for x in flattened_observation])
-
-    # Calculate indices for slicing
-    board_end_index = np.prod(board_shape)
-    next_piece_end_index = board_end_index + np.prod(next_piece_shape)
-
     # Restore the components from the flattened observation
     board = flattened_observation[:board_end_index].reshape((1,) + board_shape + (1,))
     # temp_model=Model(board_input, rescaled_board)
     # print(temp_model(board))
-    next_piece = flattened_observation[board_end_index:next_piece_end_index].reshape(next_piece_shape)
+    next_piece = flattened_observation[board_end_index:next_piece_end_index].reshape((1,))
     next_piece = np.array(tf.one_hot(next_piece, depth=7)).reshape(1, -1)
     score = flattened_observation[next_piece_end_index:]
     
