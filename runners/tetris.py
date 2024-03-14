@@ -20,11 +20,11 @@ env = gym.make("TOTRIS-v0")
 action_size = env.action_space.n
 
 # Hyperparameters
-learning_rate = 0.00025 #0.00025
+learning_rate = 0.00025
 global gamma
 gamma = 0.99  # Discount factor
 epsilon = 0.99  # Exploration-exploitation trade-off
-epsilon_decay = 0.9998
+epsilon_decay = 0.998
 min_epsilon = 0.05
 batch_size = 64
 N_iteration = 100000
@@ -42,7 +42,7 @@ episodePerSave = 60
 if demoMode:
     episodePerSave = 1
 
-experimentName = "highrescaleboard_truncated_priority_simulatedheuristicreward_DDQN_nextpiecescore_convdoubleleakyrelu_dense512_dense64_huber_64batch"
+experimentName = "rescaleboard_truncated_priority_simulatedheuristicreward_DDQN_nextpiecescore_convdoubleleakyrelu_dense512_dense64_huber_64batch"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -130,11 +130,11 @@ conv2 = Conv2D(64, (3, 3), activation=LeakyReLU(alpha=0.001), padding='same')(co
 
 # Flatten the convolutional layer output
 flattened_conv = Flatten()(conv2)
-flattened_board = Flatten()(board_input)
+# flattened_board = Flatten()(board_input)
 
 # Concatenate the flattened convolutional layer with additional inputs
 concatenated_inputs = concatenate([flattened_conv, next_piece_input, score_input])
-#concatenated_inputs = concatenate([flattened_board, next_piece_input, score_input])
+# concatenated_inputs = concatenate([flattened_board, next_piece_input, score_input])
 
 # Add dense layers
 dense1 = Dense(512)(concatenated_inputs)
