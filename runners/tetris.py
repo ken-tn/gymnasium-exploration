@@ -26,8 +26,8 @@ gamma = 0.99  # Discount factor
 epsilon = 0.99  # Exploration-exploitation trade-off
 epsilon_decay = 0.998
 min_epsilon = 0.05
-batch_size = 64
-N_iteration = 100000
+batch_size = 256
+N_iteration = 10050
 target_update_freq = 500
 
 # Experience Replay Parameters
@@ -42,7 +42,7 @@ episodePerSave = 60
 if demoMode:
     episodePerSave = 1
 
-experimentName = "rescaleboard_truncated_priority_simulatedheuristicreward_DDQN_nextpiecescore_convdoubleleakyrelu_dense512_dense64_huber_64batch"
+experimentName = "rescaleboard_truncated_priority_simulatednonperfectheuristicreward_DDQN_nextpiecescore_convtripleelu_dense512relu_dense64_huber_256batch_pretrain"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -125,11 +125,12 @@ score_input = Input(shape=(1,), name='score')
 
 # Add convolutional layers
 rescaled_board = Rescaling(scale=(1./7), input_shape=(20, 10, 1))(board_input)
-conv1 = Conv2D(32, (3, 3), activation=LeakyReLU(alpha=0.001), strides=2, padding='same')(rescaled_board)
-conv2 = Conv2D(64, (3, 3), activation=LeakyReLU(alpha=0.001), padding='same')(conv1)
+conv1 = Conv2D(32, (8, 4), activation='elu', padding='same', strides=(4, 2))(rescaled_board)
+conv2 = Conv2D(64, (4, 2), activation='elu', padding='same', strides=(2, 1))(conv1)
+conv3 = Conv2D(64, (2, 1), activation='elu', padding='same')(conv2)
 
 # Flatten the convolutional layer output
-flattened_conv = Flatten()(conv2)
+flattened_conv = Flatten()(conv3)
 # flattened_board = Flatten()(board_input)
 
 # Concatenate the flattened convolutional layer with additional inputs
@@ -137,7 +138,7 @@ concatenated_inputs = concatenate([flattened_conv, next_piece_input, score_input
 # concatenated_inputs = concatenate([flattened_board, next_piece_input, score_input])
 
 # Add dense layers
-dense1 = Dense(512)(concatenated_inputs)
+dense1 = Dense(512, activation='relu')(concatenated_inputs)
 
 # Output layer
 output = Dense(action_size)(dense1)
@@ -145,12 +146,13 @@ output = Dense(action_size)(dense1)
 # Define the model
 model = Model(inputs=[board_input, next_piece_input, score_input], outputs=output)
 model.summary()
-target_model = clone_model(model)
 
 try:
     model.load_weights(loadWeightFile)
 except:
     print("Warning: no weights loaded")
+
+target_model = clone_model(model)
 
 # Function to choose an action based on epsilon-greedy strategy
 def choose_action(state):
@@ -187,8 +189,6 @@ board_reshaped = (1,) + board_shape + (1,)
 def restoreFlattenedObs(flattened_observation):
     # Restore the components from the flattened observation
     board = flattened_observation[:board_end_index].reshape(board_reshaped)
-    # temp_model=Model(board_input, rescaled_board)
-    # print(temp_model(board))
     next_piece = np.array(tf.one_hot(flattened_observation[board_end_index:next_piece_end_index], depth=7)).reshape(1, -1)
     score = flattened_observation[next_piece_end_index:]
     
@@ -279,7 +279,7 @@ def pretraining_action():
         return 1
     
 def pretrain():
-    for episode in range(1000):
+    for episode in range(2000):
         print("Pretraining: {}".format(episode))
         train_network()
     model.save_weights(saveWeightFile)
@@ -291,6 +291,7 @@ if not pretrainingMode:
         episode += 1
         total_reward = 0
         steps = 0
+        # norewcounter = 0
 
         observation, info = env.reset()
         observation = np.concatenate([
@@ -307,6 +308,10 @@ if not pretrainingMode:
             else:
                 action = choose_action(observation)
             next_observation, reward, terminated, truncated, info = env.step(action)
+            # if reward <= 0:
+            #     norewcounter += 1
+            #     if norewcounter >= 40:
+            #         truncated = True
             next_observation = np.concatenate([
                 next_observation["board"].flatten(),
                 next_observation["next_piece"],
