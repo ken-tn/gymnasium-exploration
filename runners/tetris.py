@@ -124,15 +124,14 @@ board_input = Input(shape=(20, 10, 1,), name='board')
 input_layer = Input(shape=(14, ), name='inputlayer')
 
 # Add convolutional layers
-rescaled_board = Rescaling(scale=(1./7))(board_input)
-conv1 = Conv2D(32, (8, 4), activation='elu', padding='same', strides=(4, 2))(rescaled_board)
-conv2 = Conv2D(64, (4, 2), activation='elu', padding='same', strides=(2, 1))(conv1)
-conv3 = Conv2D(64, (2, 1), activation='elu', padding='same')(conv2)
+rescaled_board = Rescaling(scale=(1./7), input_shape=(20, 10, 1))(board_input)
+conv1 = Conv2D(32, (3, 3), activation=LeakyReLU(alpha=0.001), strides=2, padding='same')(rescaled_board)
+conv2 = Conv2D(64, (3, 3), activation=LeakyReLU(alpha=0.001), padding='same')(conv1)
 
 # Flatten the convolutional layer output
-flattened_conv = Flatten()(conv3)
+flattened_conv = Flatten()(conv2)
 
-convdense1 = Dense(256)(flattened_conv)
+convdense1 = Dense(512)(flattened_conv)
 conv_output = Dense(action_size)(convdense1)
 
 # Add dense layers
