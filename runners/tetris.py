@@ -20,7 +20,7 @@ env = gym.make("TOTRIS-v0")
 action_size = env.action_space.n
 
 # Hyperparameters
-learning_rate = 0.00025
+learning_rate = 0.001
 global gamma
 gamma = 0.99  # Discount factor
 epsilon = 0.99  # Exploration-exploitation trade-off
@@ -42,7 +42,7 @@ episodePerSave = 60
 if demoMode:
     episodePerSave = 1
 
-experimentName = "priority_simulatednonperfectheuristicreward_DDQN_simpleinput_dense256relu_dense256relu_dense128relu_huber_256batch_pretrain"
+experimentName = "correctedpos_priority_simulatednonperfectheuristicreward_DDQN_simpleinput_dense256relu_dense256relu_dense128relu_huber_256batch_pretrain"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -161,8 +161,8 @@ target_model = clone_model(model)
 def choose_action(state):
     if np.random.rand() <= epsilon:
         return np.random.choice(action_size)
-    q_values = tf.squeeze(model(observation.reshape(1,-1)))
-    return np.argmax(q_values[0])
+    q_values = tf.squeeze(model(state.reshape(1,-1)))
+    return np.argmax(q_values)
 
 @tf.function
 def Huber_loss(absTD):
