@@ -128,10 +128,9 @@ rescaled_board = Rescaling(scale=(1./7))(board_input)
 conv1 = Conv2D(32, (8, 4), activation='elu', padding='same', strides=(4, 2))(rescaled_board)
 conv2 = Conv2D(64, (4, 2), activation='elu', padding='same', strides=(2, 1))(conv1)
 conv3 = Conv2D(64, (2, 1), activation='elu', padding='same')(conv2)
-pooled_conv = MaxPooling2D()(conv3)
 
 # Flatten the convolutional layer output
-flattened_conv = Flatten()(pooled_conv)
+flattened_conv = Flatten()(conv3)
 
 convdense1 = Dense(256)(flattened_conv)
 conv_output = Dense(action_size)(convdense1)
@@ -142,7 +141,7 @@ dense2 = Dense(64, activation='relu')(dense1)
 dense3 = Dense(64, activation='relu')(dense2)
 heur_output = Dense(action_size)(dense3)
 
-concatenated_output = concatenate([heur_output, conv_output])
+concatenated_output = concatenate([conv_output, heur_output])
 out_dense = Dense(16)(concatenated_output)
 output = Dense(action_size)(out_dense)
 
