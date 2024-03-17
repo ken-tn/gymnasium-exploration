@@ -28,6 +28,7 @@ min_epsilon = 0.005
 batch_size = 1024
 N_iteration = 10000
 target_update_freq = 1000
+stepsPerTrain = 70
 
 # Experience Replay Parameters
 prioritized = True
@@ -41,7 +42,7 @@ episodePerSave = 60
 if demoMode:
     episodePerSave = 1
 
-experimentName = "combined_heuristic_convolution"
+experimentName = "combined_heuristic_convolution_modelfix"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -127,12 +128,14 @@ input_layer = Input(shape=(14, ), name='inputlayer')
 rescaled_board = Rescaling(scale=(1./7), input_shape=(20, 10, 1))(board_input)
 conv1 = Conv2D(32, (3, 3), activation=LeakyReLU(alpha=0.001), strides=2, padding='same')(rescaled_board)
 conv2 = Conv2D(64, (3, 3), activation=LeakyReLU(alpha=0.001), padding='same')(conv1)
+pooled = MaxPooling2D()(conv2)
 
 # Flatten the convolutional layer output
-flattened_conv = Flatten()(conv2)
+flattened_conv = Flatten()(pooled)
 
-convdense1 = Dense(512)(flattened_conv)
-conv_output = Dense(action_size)(convdense1)
+convdense1 = Dense(1280)(flattened_conv)
+convdense2 = Dense(512)(convdense1)
+conv_output = Dense(action_size)(convdense2)
 
 # Add dense layers
 dense1 = Dense(128, activation='relu')(input_layer)
@@ -141,7 +144,7 @@ dense3 = Dense(64, activation='relu')(dense2)
 heur_output = Dense(action_size)(dense3)
 
 concatenated_output = concatenate([conv_output, heur_output])
-out_dense = Dense(16)(concatenated_output)
+out_dense = Dense(action_size * 2 * 2)(concatenated_output)
 output = Dense(action_size)(out_dense)
 
 # Define the model
@@ -331,7 +334,7 @@ if not pretrainingMode:
             steps += 1
             total_reward += reward
             observation = next_observation
-            if steps % 20 == 0:
+            if steps % stepsPerTrain == 0:
                 train_network()
 
             if terminated or truncated:
