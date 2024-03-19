@@ -42,7 +42,7 @@ episodePerSave = 60
 if demoMode:
     episodePerSave = 1
 
-experimentName = "combined_heuristic_convolution_modelfix"
+experimentName = "combined_heuristic_convolution_dqn"
 
 loadMemoryFile = "memory/{}.pkl".format(experimentName)
 saveMemoryFile = "memory/{}.pkl".format(experimentName)
@@ -150,13 +150,13 @@ output = Dense(action_size)(out_dense)
 # Define the model
 model = Model(inputs=[board_input, input_layer], outputs=output)
 model.summary()
+target_model = clone_model(model)
 
 try:
     model.load_weights(loadWeightFile)
+    target_model.load_weights(loadWeightFile)
 except:
     print("Warning: no weights loaded")
-
-target_model = clone_model(model)
 
 # Function to choose an action based on epsilon-greedy strategy
 def choose_action(state):
@@ -215,7 +215,7 @@ def getTensors(obs):
 
     return [boards, info]
 
-target_func = Double_DQN_target_func
+target_func = DQN_target_func
 # Function to train the Q-network using experience replay
 def train_network():
     if rb.get_stored_size() < batch_size:
@@ -329,7 +329,7 @@ if not pretrainingMode:
                 info["surface"],
                 # [value for pos in info['current_piece_positions'] for value in pos.values()]
             ])
-            rb.add(obs=observation, act=action, rew=reward, next_obs=next_observation, done=(terminated or truncated))
+            rb.add(obs=observation, act=action, rew=reward, next_obs=next_observation, done=terminated)
 
             steps += 1
             total_reward += reward
