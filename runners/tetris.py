@@ -215,7 +215,7 @@ def getTensors(obs):
 
     return [boards, info]
 
-target_func = DQN_target_func
+target_func = Double_DQN_target_func
 # Function to train the Q-network using experience replay
 def train_network():
     if rb.get_stored_size() < batch_size:
@@ -299,7 +299,7 @@ if not pretrainingMode:
         
         observation = np.concatenate([
             observation["board"].flatten(),
-            observation["next_piece"],
+            observation["next_piece"], # one hot encode this!!!!!!!!!
             [info["true_holes"]],
             [info["tuck_setup_holes"]],
             [info["average_height"]],
