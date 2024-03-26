@@ -63,6 +63,12 @@ except:
 
 # Experience Replay Memory
 def makeReplayBuffer():
+    """
+    Creates the replay buffer.
+
+    Returns:
+        A replay buffer
+    """
     # https://ymd_h.gitlab.io/cpprb/examples/dqn_per/
     global discount
 
@@ -88,12 +94,10 @@ def makeReplayBuffer():
 
     if prioritized:
         rb = PrioritizedReplayBuffer(buffer_size, env_dict, Nstep=Nstep)
-        # rb = PrioritizedReplayBuffer(buffer_size, env_dict)
         
         return rb
     else:
         rb = ReplayBuffer(buffer_size,env_dict, Nstep=Nstep)
-        # rb = ReplayBuffer(buffer_size, env_dict)
 
         return rb
 
@@ -109,10 +113,29 @@ optimizer=Adam(learning_rate=learning_rate)
 
 @tf.function
 def Huber_loss(absTD):
+    """
+    Calculates Huber loss.
+
+    Args:
+        absTD: The temporal difference error
+
+    Returns:
+        Huber loss value
+    """
     return tf.where(absTD > 1.0, absTD, tf.math.square(absTD))
 
 @tf.function
 def MSE(absTD):
+    """
+    Calculates Mean Square Error.
+
+    Args:
+        absTD: The temporal difference error
+
+    Returns:
+        Mean Square Error value
+    """
+
     return tf.math.square(absTD)
 
 loss_func = Huber_loss
@@ -120,8 +143,6 @@ loss_func = Huber_loss
 # Build the Q-network
 # Define input layers for each component of the observation space
 board_input = Input(shape=(20, 10, 1,), name='board')
-#next_piece_input = Input(shape=(7,), name='next_piece')
-#score_input = Input(shape=(1,), name='score')
 input_layer = Input(shape=(14, ), name='inputlayer')
 
 # Add convolutional layers
@@ -148,8 +169,9 @@ out_dense = Dense(action_size * 2 * 2)(concatenated_output)
 output = Dense(action_size)(out_dense)
 
 # Define the model
-model = Model(inputs=[board_input, input_layer], outputs=output)
+model = Model(inputs=[board_input, input_layer], outputs=conv_output)
 model.summary()
+# visualkeras.layered_view(model, to_file='output.png').show() # write and show
 target_model = clone_model(model)
 
 try:
@@ -160,27 +182,74 @@ except:
 
 # Function to choose an action based on epsilon-greedy strategy
 def choose_action(state):
+    """
+    Chooses an action based on decaying epsilon-greedy.
+
+    Args:
+        state: The observation
+
+    Returns:
+        An integer corresponding to an action
+    """
+
     if np.random.rand() <= epsilon:
         return np.random.choice(action_size)
     q_values = model(restoreFlattenedObs(state)) # same as model.predict_on_batch
     return np.argmax(q_values)
 
 @tf.function
-def Huber_loss(absTD):
-    return tf.where(absTD > 1.0, absTD, tf.math.square(absTD))
-
-@tf.function
 def Q_func(model,obs,act,act_shape):
+    """
+    Predicts the Q value from model.
+
+    Args:
+        model: The model
+        obs: The observation
+        act: The action
+        act_shape: Shape of the action space
+
+    Returns:
+        An integer corresponding to an action
+    """
+
     return tf.reduce_sum(model(obs) * tf.one_hot(act,depth=act_shape), axis=1)
 
 @tf.function
 def DQN_target_func(model,target,next_obs,rew,done,gamma,act_shape):
+    """
+    Calculates the Q value.
+
+    Args:
+        model: The model
+        target: Target model
+        next_obs: The next observation
+        rew: Reward
+        done: True if the observation is done
+        gamma: Discount factor
+        act_shape: Shape of the action space
+
+    Returns:
+        Q values
+    """
+
     return gamma*tf.reduce_max(target(next_obs),axis=1)*(1.0-done) + rew
 
 @tf.function
 def Double_DQN_target_func(model,target,next_obs,rew,done,gamma,act_shape):
     """
     Double DQN: https://arxiv.org/abs/1509.06461
+
+    Args:
+        model: The model
+        target: Target model
+        next_obs: The next observation
+        rew: Reward
+        done: True if the observation is done
+        gamma: Discount factor
+        act_shape: Shape of the action space
+
+    Returns:
+        Double Q values
     """
     act = tf.math.argmax(model(next_obs),axis=1)
     return gamma*tf.reduce_sum(target(next_obs)*tf.one_hot(act,depth=act_shape), axis=1)*(1.0-done) + rew
@@ -189,6 +258,15 @@ board_shape = env.observation_space['board'].shape
 board_end_index = np.prod(board_shape)
 board_reshaped = (1,) + board_shape + (1,)
 def restoreFlattenedObs(flattened_observation):
+    """
+    Restores a flattened observation to the original observation
+
+    Args:
+        flattened_observation: The flattened observation
+    
+    Returns:
+        The observation unflattened
+    """
     # Restore the components from the flattened observation
     board = flattened_observation[:board_end_index].reshape(board_reshaped)
     # temp_model=Model(board_input, rescaled_board)
@@ -198,6 +276,16 @@ def restoreFlattenedObs(flattened_observation):
     return [board, info]
 
 def getTensors(obs):
+    """
+    Converts observations to tensors
+
+    Args:
+        obs: An array of observations
+    
+    Returns:
+        Observations as a tensor
+    """
+
     boards = np.zeros((batch_size, 20, 10, 1))
     info = np.zeros((batch_size, 14))
     # Iterate over each element in observation
@@ -216,8 +304,12 @@ def getTensors(obs):
     return [boards, info]
 
 target_func = Double_DQN_target_func
-# Function to train the Q-network using experience replay
 def train_network():
+    """
+    Trains the model by applying gradients from replay.
+    Updates the priority buffer if applicable.
+    """
+
     if rb.get_stored_size() < batch_size:
         return
     
@@ -263,6 +355,14 @@ def train_network():
         rb.update_priorities(sample["indexes"], absTD)
 
 def pretraining_action():
+    """
+    Used for generating pre-training memory.
+    Inputs: enter = down, 1 = rotate, 2 = left, 3 = right
+
+    Returns:
+        An action
+    """
+
     action = input()
 
     if action == "":
@@ -278,6 +378,9 @@ def pretraining_action():
         return 1
     
 def pretrain():
+    """
+    Pre-trains the network. Use after filling the experience replay with demonstration experience.
+    """
     for episode in range(2000):
         print("Pretraining: {}".format(episode))
         train_network()
